@@ -1,0 +1,30 @@
+name: Create Freenove v1.41 draft release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-v1-41-draft-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stage v1.41 firmware release for manual upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "freenove-v1.41" >/dev/null 2>&1; then
+            echo "Existing v1.41 release retained"
+          else
+            gh release create "freenove-v1.41" \
+              --target main \
+              --title "Freenove Cooling Alarm v1.41 — Code-Review Fixes" \
+              --notes "Compiled with arduino-cli (ESP32 core 3.3.12, ESP32 Dev Module, Minimal SPIFFS, Freenove FNK0114S TFT_eSPI and LVGL 8.4.0). Not yet tested on hardware. Includes the v1.40 solid red Alarm Due border. Fixes: CREATE is refused with CLOCK NOT VERIFIED when the clock is not NTP-verified (such alarms never fired); a device booting without verified time while a closed-hours state is saved now opens its screen; a full alarm list shows ALARM LIST FULL instead of SAVE FAILED - RETRY; long recipe names are preselected correctly when editing; sheet data out-of-memory is reported as OUT_OF_MEMORY; SELECT button 30 ms debounce; font user_data guard. Upload Sketch_13.1_LVGL.ino.bin (1,658,336 bytes, SHA-256 46c351122bfaf61f623008e31136295dc355055b4d05a2627019472dfcb01e9d), then publish. firmware.json stays on v1.39 until this release is published." \
+              --draft
+          fi
