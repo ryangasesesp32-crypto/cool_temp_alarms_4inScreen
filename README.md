@@ -1,39 +1,52 @@
 # Freenove Cooling Alarm — 4-inch Native LVGL
 
-## Development source: v1.35 — Smart Navigation & 18px Minimum UI
+## v1.36 — Approved screen updates (source staged for testing)
 
-The current Arduino sketch is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino).
+The Arduino source is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino). Target: Freenove FNK0114S 480 × 320 landscape touch display with LVGL 8.4.0.
 
-**Status (2026-11-11):** v1.35 source is committed to `main` for compilation and testing. This source has **not** been verified in Arduino IDE or on the physical Freenove device. The **OTA manifest remains v1.34**, which is the currently published release with a binary asset. Do not update `firmware.json` to v1.35 before a matching, tested `Sketch_13.1_LVGL.ino.bin` exists in the v1.35 release.
+**Development status:** v1.36 firmware source is on `main`; it has passed source-level checks of navigation hit regions and expected UI code paths. A compiled binary and hardware validation have **not** been performed in this session. The [OTA manifest](./firmware.json) remains v1.35 until a matching v1.36 binary is compiled, attached to a release, and verified.
 
-### v1.35 changes
-- PREV/NEXT navigation is smart: controls turn grey and do nothing when no page or item exists in that direction. Applicable paginated screens keep their original navigation behavior.
-- Set **18 px as the minimum active UI font size** throughout this Freenove project; longer dynamic labels use `...` if they cannot fit.
-- The startup diagnostic console also uses an 18px minimum font, with fewer, taller rows.
-- CREATE ALARM: C1/C2 time buttons display the alarm type and scheduled time only, with no **EDIT TIME** caption. Tapping still opens the existing time editor.
-- HOME: SETTINGS button is yellow with black lettering.
-- The existing five-chirp due-alarm pattern, alarm timing, Wi-Fi, Google Sheets, storage, OTA behavior, and physical button logic are retained.
+### Screen changes
+- **View Alarms:** 3 × 2 cards, six alarms per page. First line `c1 02:24 AM Brian`; second line recipe name. No title. Bottom navigation `page | HOME | PREV | NEXT` with disabled grey PREV/NEXT when unavailable. Cancelled alarms remain hidden.
+- **Alarm Details:** first-name and 12-hour alarm details, recipe, tappable status. Red **BACK** on left and green **EDIT** on right. Existing status transition rules and due-time restrictions remain unchanged.
+- **Confirmation:** on alarm-related confirmations, reuse the exact HOME `homeAutoFit()` sizing and positions for alarm and recipe. Question left-aligned below; red NO on left, green YES on right. All non-alarm confirmations retain their separate message content.
+- **Settings:** existing 4-row × 2-column grid, six distinct active button colors; two inactive positions.
+- **Advanced Settings:** matching 4-row × 2-column grid, distinct active button colors; three inactive positions. BACK left, HOME right on bottom row.
+- **Cooling Info:** c1 60°C → below 21°C in 2 hours; c2 21°C → below 4°C in 6 hours total; existing alarm time scheduling untouched.
+- **Cooking Info:** six categories from the supplied `tblCookInfo` reference (83°C, 74°C, 71°C, 70°C, 63°C, 60°C), three entries per page across two pages, wrapped descriptions, pagination at top right, bottom `BACK | PREV | NEXT`, and smart navigation. See reference table below.
 
-### Hardware / Arduino IDE
-- Freenove FNK0114S: ST7796 480 × 320 landscape resistive-touch screen; ESP32 Dev Module
-- LVGL 8.4.0 and previously working Freenove TFT_eSPI configuration
-- Keep vendor `display.h` and `display.cpp` in the sketch directory
-- Partition: **Minimal SPIFFS (1.9 MB APP with OTA)**; **Erase All Flash: Disabled**
+### Cooking guide reference — local v1.36 display values
+| Item | Temperature |
+| --- | ---: |
+| Whole Poultry and Stuffed Items | 83°C |
+| Ground Meat Items (including Poultry), Shellfish, Pieces of Poultry & Eggs | 74°C |
+| Pork | 71°C |
+| Fish | 70°C |
+| Whole muscle meat (including Roast Beef), (excluding Poultry), fish, and cook-to-order eggs. | 63°C |
+| Plants (fruits, vegetables, and grains) | 60°C |
 
-### Verification and release process
-1. Compile `Sketch_13.1_LVGL.ino` using **Sketch → Verify**.
-2. Test on the spare Freenove device: pagination limits, text truncation, alarms and chirps, C1/C2 time editing, and touch controls.
-3. Export the compiled binary named **Sketch_13.1_LVGL.ino.bin**.
-4. Attach the verified binary to the GitHub release tagged `freenove-v1.35`; publish that release.
-5. Only after the binary, release URL and device behavior are validated, change [firmware.json](./firmware.json) to `v1.35` with this exact binary URL:
+**Data integration caveat:** The current Apps Script data endpoint returns config, cooks, and recipes; it does not yet return `tblCookInfo`/`CoolInfo`. The temperatures above and the cooling targets are **built into the v1.36 screen code for testing**. Automatic updating from the tables requires a future compatible API/data-cache change; do not confuse this display test with live Sheets integration.
+
+### Invariants
+- The original HOME screen appearance, layout, and cook naming behavior remain unchanged.
+- Existing C1/C2 alarm creation, due-time calculation, alert chirps, LEDs, storage, Google Sheets actions, calibration, and physical SELECT control remain untouched.
+- Minimum text size is 18px, with smart wrapping/ellipsis rather than smaller fonts.
+- Separate ELEGOO `cool_temp_alarms` repository remains unchanged.
+
+### Testing and OTA sequence
+1. In Arduino IDE, open `Sketch_13.1_LVGL.ino` with the same working Freenove `display.h` and `display.cpp`, LVGL 8.4.0, TFT_eSPI and board setup.
+2. Select **ESP32 Dev Module**, **Minimal SPIFFS (1.9MB APP with OTA)**, **Erase All Flash: Disabled**; run **Sketch → Verify**.
+3. Test the screen navigation, smart button disabled states, six-card alarm pagination, alarm status cycling, confirmations, cooking guide wrapping, and cooking/cooling information on the spare Freenove.
+4. Export `Sketch_13.1_LVGL.ino.bin` and attach it to a release with tag `freenove-v1.36`.
+5. Once a matching compiled binary has been validated, update `firmware.json` to:
 
    ```json
    {
-     "version": "v1.35",
-     "url": "https://github.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/releases/download/freenove-v1.35/Sketch_13.1_LVGL.ino.bin"
+     "version": "v1.36",
+     "url": "https://github.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/releases/download/freenove-v1.36/Sketch_13.1_LVGL.ino.bin"
    }
    ```
 
-6. Verify OTA on the home/test device before promoting the same build to any onsite Freenove device.
+6. Test OTA on the home/spare device first. Confirm the booted version and full screen behavior before further rollout.
 
-The separate ELEGOO `cool_temp_alarms` repository and OTA manifest must remain unchanged. Keep private Wi-Fi and Google Sheets credentials in device NVS, not in public source.
+Do not commit Wi-Fi credentials, private Google Sheets tokens, or private NVS data into GitHub.
