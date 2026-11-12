@@ -1,0 +1,30 @@
+name: Create Freenove v1.38 draft release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-v1-38-draft-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create v1.38 draft without changing OTA manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "freenove-v1.38" >/dev/null 2>&1; then
+            echo "Existing v1.38 release retained"
+          else
+            gh release create "freenove-v1.38" \
+              --target main \
+              --title "Freenove Cooling Alarm v1.38 — 20px Button Labels" \
+              --notes "The v1.38 source and TXT are on main: cap all buttons at 20px bold, fallback to 18px regular, use ellipsis when required, preserve UI layouts and touch targets. This draft is intentionally missing a compiled binary. Compile Sketch_13.1_LVGL.ino, attach Sketch_13.1_LVGL.ino.bin, verify board/version, and publish. The firmware.json manifest remains on the existing published v1.37 release until v1.38 OTA is ready." \
+              --draft
+          fi
