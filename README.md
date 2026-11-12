@@ -1,43 +1,39 @@
 # Freenove Cooling Alarm — 4-inch Native LVGL
 
-## Development source: v1.33 (Recipe Search UI test)
+## Development source: v1.34 — Approved UI consolidation (no keyboard)
 
-The full Arduino sketch is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino).
+The complete current Arduino sketch is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino).
 
-**Status:** v1.33 source staged for **Arduino Verify and test hardware**. The active OTA manifest is intentionally pinned to the last published **v1.32** release, pending a working v1.33 binary.
+**Status:** Corrected v1.34 source staged for Arduino IDE Verify and physical testing. The **live OTA manifest remains on v1.33**, the last version the user reported installed successfully. Do not activate the v1.34 manifest until a verified, matching compiled binary is attached to a published GitHub release.
 
-### v1.33 Recipe Search test scope
-- Open using **CREATE ALARM → RECIPE** or **EDIT ALARM → Recipe**
-- Native LVGL 8.4 on-screen keyboard, with **CLEAR**, **SPACE**, and **DEL**
-- No status header on the Recipe Search screen
-- Live case-insensitive filtering of the **locally cached** recipe list — no network requests per keystroke
-- Results sorted alphabetically; **2 columns × 3 rows**, six per page
-- Navigation order: **page indicator, BACK, PREV, NEXT**
-- Typing or deleting text resets results to the first page
-- Tapping a result selects a recipe and returns to the prior Create/Edit Alarm screen
-- BACK returns without modifying the selected recipe
+### v1.34 changes
+- Button acknowledgments use **buzzer only**; reserve LED indications for actual alarms/startup hardware check
+- HOME: no placeholder alarm/recipe text when no alarms are pending
+- CREATE ALARM: full-width use of horizontal COOK (25%) and RECIPE (75%) selection buttons, editable C1/C2 time fields, red CANCEL and green CREATE
+- EDIT ALARM TIME: plain title, time preview, **-1h / -5m / +5m / +1h** adjustment buttons, CANCEL and SAVE
+- COOK SELECTION: **3 columns × 3 rows**, alphabetical first names, page display and BACK/PREV/NEXT
+- RECIPE SELECTION: **no on-screen keyboard**; restored Venue → Type → Recipe selection with **large recipe buttons** (2 columns × 3 rows), pagination, BACK/PREV/NEXT, and no status header on the recipe list
+- Preserve original alarm scheduling defaults, Wi-Fi, Google Sheets, NVS, storage and OTA implementations
+- Corrected v1.34 compile-time syntax issue in the button text-fitting function: `caption.indexOf('\n')`
 
-The other proposed screen redesigns, buzzer-only button acknowledgment, and the empty HOME-alarm-text change **are not included** in this v1.33 test candidate.
-
-### Hardware and toolchain
-- Freenove FNK0114S 480 × 320 touchscreen
-- ESP32 Dev Module with the previously working Freenove TFT_eSPI display configuration
-- LVGL 8.4.0
-- Keep the official Freenove `display.h` and `display.cpp` in the existing Arduino sketch folder
+### Hardware / Arduino IDE
+- Freenove FNK0114S 480 × 320 touch display; ESP32 Dev Module
+- LVGL 8.4.0 and the previously working Freenove TFT_eSPI configuration
+- Retain official Freenove `display.h` and `display.cpp` in the Arduino sketch directory
 - Partition: **Minimal SPIFFS (1.9 MB APP with OTA)**; **Erase All Flash: Disabled**
 
-### Release workflow
-1. Compile the staged v1.33 sketch in Arduino IDE (**Sketch → Verify**).
-2. Test on the spare Freenove device before a production update.
-3. Export the successful build using **Sketch → Export Compiled Binary**.
-4. In the GitHub draft release tagged **`freenove-v1.33`**, attach **`Sketch_13.1_LVGL.ino.bin`** and publish the release.
-5. Only after confirming the correct binary asset and approving OTA deployment, update `firmware.json` to:
+### Recommended validation and OTA release sequence
+1. Compile the staged v1.34 sketch with **Sketch → Verify** in Arduino IDE.
+2. Test on the spare Freenove device. Check alarm functions, buttons, time adjustment, cook selection, and recipe selection.
+3. Use **Sketch → Export Compiled Binary**, confirming the binary file is named `Sketch_13.1_LVGL.ino.bin`.
+4. Attach that binary to the **draft** GitHub release tagged `freenove-v1.34` and publish it.
+5. Verify release URL, asset identity, size, and test results; **only then** activate the v1.34 OTA manifest:
    ```json
    {
-     "version": "v1.33",
-     "url": "https://github.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/releases/download/freenove-v1.33/Sketch_13.1_LVGL.ino.bin"
+     "version": "v1.34",
+     "url": "https://github.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/releases/download/freenove-v1.34/Sketch_13.1_LVGL.ino.bin"
    }
    ```
-6. Reboot the Freenove and verify `Firmware: v1.33` in Serial Monitor.
+6. Reboot the test Freenove to verify `Firmware: v1.34` and confirm the UI behaves as designed.
 
-Do not change the ELEGOO `cool_temp_alarms` repository or its OTA manifest. Wi-Fi credentials and Google Sheets authorization belong in device NVS and must not be published.
+The separate ELEGOO `cool_temp_alarms` repository and manifest must remain unchanged. Keep private Wi-Fi and Google Sheets credentials in device NVS, not in public source.
