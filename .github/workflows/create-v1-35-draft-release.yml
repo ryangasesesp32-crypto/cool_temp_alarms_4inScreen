@@ -1,0 +1,29 @@
+name: Create Freenove v1.35 draft release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-v1-35-draft-release.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create v1.35 draft (do not activate OTA)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "freenove-v1.35" >/dev/null 2>&1; then
+            echo "freenove-v1.35 already exists"
+          else
+            gh release create "freenove-v1.35" \
+              --target main \
+              --title "Freenove Cooling Alarm v1.35 — Smart Navigation & 18px Minimum UI" \
+              --notes "Staged source for hardware testing: smart PREV/NEXT, 18px minimum font and ellipsis, simplified C1/C2 time labels, yellow HOME Settings with black text. Compile and test the sketch before attaching a matching Sketch_13.1_LVGL.ino.bin. Do not update firmware.json until the verified binary is published." \
+              --draft
+          fi
