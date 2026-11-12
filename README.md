@@ -1,35 +1,43 @@
-# Freenove Cooling Alarm — LVGL 4-inch
+# Freenove Cooling Alarm — 4-inch Native LVGL
 
-## Current development source: v1.32
+## Development source: v1.33 (Recipe Search UI test)
 
-The complete Arduino sketch is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino).
+The full Arduino sketch is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino).
 
-**Status:** Source staged for testing. Do not activate the v1.32 OTA manifest until a matching, verified compiled binary is attached to a GitHub release.
+**Status:** v1.33 source staged for **Arduino Verify and test hardware**. The active OTA manifest is intentionally pinned to the last published **v1.32** release, pending a working v1.33 binary.
+
+### v1.33 Recipe Search test scope
+- Open using **CREATE ALARM → RECIPE** or **EDIT ALARM → Recipe**
+- Native LVGL 8.4 on-screen keyboard, with **CLEAR**, **SPACE**, and **DEL**
+- No status header on the Recipe Search screen
+- Live case-insensitive filtering of the **locally cached** recipe list — no network requests per keystroke
+- Results sorted alphabetically; **2 columns × 3 rows**, six per page
+- Navigation order: **page indicator, BACK, PREV, NEXT**
+- Typing or deleting text resets results to the first page
+- Tapping a result selects a recipe and returns to the prior Create/Edit Alarm screen
+- BACK returns without modifying the selected recipe
+
+The other proposed screen redesigns, buzzer-only button acknowledgment, and the empty HOME-alarm-text change **are not included** in this v1.33 test candidate.
 
 ### Hardware and toolchain
-- Freenove FNK0114S, 480 × 320 screen (ST7796), resistive touch
-- ESP32 Dev Module; Arduino IDE with ESP32 board support
-- LVGL 8.4.0 and the working Freenove TFT_eSPI configuration
-- Retain the original Freenove `display.h` and `display.cpp` in the Arduino sketch folder
-- Partition: Minimal SPIFFS (1.9 MB APP with OTA); Erase All Flash: disabled
+- Freenove FNK0114S 480 × 320 touchscreen
+- ESP32 Dev Module with the previously working Freenove TFT_eSPI display configuration
+- LVGL 8.4.0
+- Keep the official Freenove `display.h` and `display.cpp` in the existing Arduino sketch folder
+- Partition: **Minimal SPIFFS (1.9 MB APP with OTA)**; **Erase All Flash: Disabled**
 
-### v1.32 candidate changes
-- New HOME layout based on the LCD Wizard design, with monospaced fonts and smart auto-fit for alarm and recipe text
-- Separate LED-only startup test removed; combined LED + buzzer test retained
-- CREATE bypasses the confirmation screen and uses two short acknowledgment chirps after saving
-- Legacy inactive graphics renderer removed; native LVGL retained
-
-### OTA release procedure
-1. Verify the v1.32 sketch in Arduino IDE and test it on the spare Freenove first.
-2. Use **Sketch → Export Compiled Binary** to export `Sketch_13.1_LVGL.ino.bin`.
-3. Create a GitHub release with the exact tag **`freenove-v1.32`** and attach the binary.
-4. Verify the binary asset, then update `firmware.json` to:
+### Release workflow
+1. Compile the staged v1.33 sketch in Arduino IDE (**Sketch → Verify**).
+2. Test on the spare Freenove device before a production update.
+3. Export the successful build using **Sketch → Export Compiled Binary**.
+4. In the GitHub draft release tagged **`freenove-v1.33`**, attach **`Sketch_13.1_LVGL.ino.bin`** and publish the release.
+5. Only after confirming the correct binary asset and approving OTA deployment, update `firmware.json` to:
    ```json
    {
-     "version": "v1.32",
-     "url": "https://github.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/releases/download/freenove-v1.32/Sketch_13.1_LVGL.ino.bin"
+     "version": "v1.33",
+     "url": "https://github.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/releases/download/freenove-v1.33/Sketch_13.1_LVGL.ino.bin"
    }
    ```
-5. Restart the device and review Serial Monitor for OTA success and the installed `Firmware: v1.32`.
+6. Reboot the Freenove and verify `Firmware: v1.33` in Serial Monitor.
 
-Do not change the original ELEGOO `cool_temp_alarms` repository or its OTA manifest. Wi-Fi and Sheets credentials stay in NVS; never commit private credentials.
+Do not change the ELEGOO `cool_temp_alarms` repository or its OTA manifest. Wi-Fi credentials and Google Sheets authorization belong in device NVS and must not be published.
