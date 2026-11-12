@@ -1,0 +1,30 @@
+name: Create Freenove v1.37 draft release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-v1-37-draft-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stage v1.37 release (binary not yet attached)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "freenove-v1.37" >/dev/null 2>&1; then
+            echo "Existing v1.37 release retained; not publishing or modifying assets"
+          else
+            gh release create "freenove-v1.37" \
+              --target main \
+              --title "Freenove Cooling Alarm v1.37 — UI Updates" \
+              --notes "Source v1.37 in Sketch_13.1_LVGL.ino and CoolingAlarm_Freenove_v1_37.txt. Approved updates: centered button labels, adjacent smart PREV/NEXT, 3x3 first-name roster, recipe browser and information layout, live device mode in Advanced Settings, and Edit Alarm AM/PM time. Attach the matching compiled Sketch_13.1_LVGL.ino.bin, verify its version/device target, then publish. ATTENTION: firmware.json may reference this tag before a binary is available, so OTA will fail until this release is published with the verified asset." \
+              --draft
+          fi
