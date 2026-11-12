@@ -12702,38 +12702,56 @@ static lv_obj_t* ntile(Rect logical,uint16_t bg,uint16_t border=DIM,int radius=5
   if(!enabled)lv_obj_set_style_bg_color(o,nativeColor(GREY),0);
   return o;
 }
-// All button labels are centered horizontally AND vertically, with smart font fit.
-// Font size never drops below 18px; LVGL's DOT mode handles overflow.
+// Shared caption renderer for every button: maximum 20px bold, minimum 18px.
+// Fit in one or two centered lines as permitted; long labels show ... (LVGL DOT).
+// Keep existing touch targets, button backgrounds, and non-button text unchanged.
+static void adaptiveButtonCaption(lv_obj_t* parent,const String& caption,
+                                  int x,int y,int w,int h,lv_color_t fg,int maxLines) {
+  if(!parent || caption.length()==0)return;
+  static const lv_font_t* fonts[]={&cool_mono_bold_20,&cool_mono_regular_18};
+  static const int cellPixels[]={13,11};
+  w=max(1,w);h=max(1,h);
+  maxLines=max(1,min(2,maxLines));
+  const int breakPos=caption.indexOf('\n');
+  const int chars=(int)homeUtf8Chars(caption);
+  const int longestLine=breakPos>=0?
+    max((int)homeUtf8Chars(caption.substring(0,breakPos)),
+        (int)homeUtf8Chars(caption.substring(breakPos+1))):chars;
+  const int minLines=breakPos>=0?2:1;
+  const lv_font_t* selected=fonts[1];
+  int lines=1;
+  bool found=false;
+  // Use 20px bold whenever it can fit; step down to 18px only if needed.
+  for(int f=0;f<2 && !found;f++) {
+    const int columns=w/cellPixels[f];
+    if(columns<=0)continue;
+    for(int n=minLines;n<=maxLines;n++) {
+      if(n*(int)fonts[f]->line_height>h)continue;
+      if((breakPos>=0?longestLine<=columns:chars<=columns*n)) {
+        selected=fonts[f];lines=n;found=true;break;
+      }
+    }
+  }
+  if(!found) {
+    // Never drop below 18px. LVGL truncates overflow with an ellipsis.
+    lines=max(1,min(maxLines,h/(int)selected->line_height));
+  }
+  const int labelH=min(h,lines*(int)selected->line_height);
+  lv_obj_t* label=lv_label_create(parent);
+  lv_obj_set_pos(label,x,y+(h-labelH)/2);
+  lv_obj_set_size(label,w,labelH);
+  lv_obj_set_style_text_font(label,selected,0);
+  lv_obj_set_style_text_color(label,fg,0);
+  lv_obj_set_style_text_align(label,LV_TEXT_ALIGN_CENTER,0);
+  lv_label_set_long_mode(label,LV_LABEL_LONG_DOT);
+  lv_label_set_text(label,caption.c_str());
+}
 static void nbutton(Rect r,const String& text,uint16_t bg=BLUE,uint16_t fg=WHITE,bool enabled=true) {
   ntile(r,enabled?bg:GREY,enabled?DIM:GREY,5,enabled);
   if(text.length()==0)return;
   const Rect b=nbounds(r);
-  const int w=max(1,b.w-12),h=max(1,b.h-8);
-  static const lv_font_t* fonts[]={&cool_mono_bold_28,&cool_mono_bold_24,
-                                   &cool_mono_bold_20,&cool_mono_regular_18};
-  static const int cells[]={17,15,13,11};
-  const int chars=(int)homeUtf8Chars(text);
-  const lv_font_t* selected=fonts[3];
-  int lines=1;
-  bool fitted=false;
-  for(int n=1;n<=2 && !fitted;n++) {
-    for(int f=0;f<4;f++) {
-      const int columns=w/cells[f];
-      if(columns>0 && chars<=columns*n && n*(int)fonts[f]->line_height<=h) {
-        selected=fonts[f];lines=n;fitted=true;break;
-      }
-    }
-  }
-  if(!fitted) lines=max(1,min(2,h/(int)selected->line_height));
-  const int labelH=min(h,lines*(int)selected->line_height);
-  lv_obj_t* label=lv_label_create(nativeRoot);
-  lv_obj_set_pos(label,b.x+(b.w-w)/2,b.y+(b.h-labelH)/2);
-  lv_obj_set_size(label,w,labelH);
-  lv_obj_set_style_text_font(label,selected,0);
-  lv_obj_set_style_text_color(label,enabled?nativeColor(fg):nativeColor(DIM),0);
-  lv_obj_set_style_text_align(label,LV_TEXT_ALIGN_CENTER,0);
-  lv_label_set_long_mode(label,LV_LABEL_LONG_DOT);
-  lv_label_set_text(label,text.c_str());
+  adaptiveButtonCaption(nativeRoot,text,b.x+6,b.y+4,max(1,b.w-12),
+                        max(1,b.h-8),nativeColor(enabled?fg:DIM),2);
 }
 static void nline(const String& s,int y,uint16_t c=WHITE,int height=24) {
   ntext(s,{8,y,304,height},c,true);
@@ -12798,46 +12816,9 @@ static void uiLargeButton(Rect logical,const String& caption,uint16_t bg,
   lv_obj_t* bgTile=ntile(logical,enabled?bg:GREY,enabled?border:GREY,8,enabled);
   (void)bgTile;
   const Rect r=nbounds(logical);
-  const int availableWidth=max(1,r.w-14);
-  const int availableHeight=max(1,r.h-9);
-  const int letters=(int)homeUtf8Chars(caption);
-  const int forcedBreak=caption.indexOf('\n');
-  const int minLines=forcedBreak>=0?2:1;
-  const int firstLineLength=forcedBreak>=0?(int)homeUtf8Chars(caption.substring(0,forcedBreak)):letters;
-  const int secondLineLength=forcedBreak>=0?
-      (int)homeUtf8Chars(caption.substring(forcedBreak+1)):0;
-  const int longestLine=max(firstLineLength,secondLineLength);
-  static const lv_font_t* fonts[]={
-    &cool_mono_bold_28,&cool_mono_bold_24,&cool_mono_bold_20,
-    &cool_mono_regular_18
-  };
-  static const int cell[]={17,15,13,11};
-  const lv_font_t* font=fonts[3]; // Minimum: 18px, never bold_16/12.
-  int lines=1;
-  // Prefer a complete single line; otherwise the largest complete two-line label.
-  bool chosen=false;
-  for(int trialLines=minLines;trialLines<=maxLines && !chosen;trialLines++) {
-    for(int i=0;i<4;i++) {
-      const int cols=availableWidth/cell[i];
-      if(cols>0 && (forcedBreak>=0?(longestLine<=cols):letters<=cols*trialLines) &&
-         trialLines*(int)fonts[i]->line_height<=availableHeight) {
-        font=fonts[i];lines=trialLines;chosen=true;break;
-      }
-    }
-  }
-  if(!chosen) {
-    // After reaching 18px, keep at most maxLines and show trailing dots.
-    lines=max(1,min(maxLines,availableHeight/(int)font->line_height));
-  }
-  const int labelH=min(availableHeight,lines*(int)font->line_height);
-  lv_obj_t* label=lv_label_create(nativeRoot);
-  lv_obj_set_pos(label,r.x+7,r.y+max(2,(r.h-labelH)/2));
-  lv_obj_set_size(label,availableWidth,labelH);
-  lv_label_set_long_mode(label,LV_LABEL_LONG_DOT);
-  lv_obj_set_style_text_font(label,font,0);
-  lv_obj_set_style_text_color(label,enabled?lv_color_white():lv_color_make(155,155,155),0);
-  lv_obj_set_style_text_align(label,LV_TEXT_ALIGN_CENTER,0);
-  lv_label_set_text(label,caption.c_str());
+  adaptiveButtonCaption(nativeRoot,caption,r.x+7,r.y+4,max(1,r.w-14),
+                        max(1,r.h-9),enabled?lv_color_white():
+                        lv_color_make(155,155,155),maxLines);
 }
 static void homeButton(const Rect& logical,const char* caption,lv_color_t color,bool enabled,
                        lv_color_t textColor) {
@@ -12851,13 +12832,9 @@ static void homeButton(const Rect& logical,const char* caption,lv_color_t color,
   lv_obj_set_style_radius(btn,10,0);
   lv_obj_set_style_pad_all(btn,0,0);
   lv_obj_clear_flag(btn,LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_clear_flag(btn,LV_OBJ_FLAG_CLICKABLE); // Existing touch overlay handles tap.
-  lv_obj_t* label=lv_label_create(btn);
-  lv_label_set_text(label,caption);
-  lv_obj_set_style_text_color(label,enabled?textColor:lv_color_make(155,155,155),0);
-  lv_obj_set_style_text_font(label,&cool_mono_bold_20,0);
-  lv_obj_set_style_text_letter_space(label,0,0);
-  lv_obj_center(label);
+  lv_obj_clear_flag(btn,LV_OBJ_FLAG_CLICKABLE); // Existing touch overlay handles taps.
+  adaptiveButtonCaption(btn,String(caption),6,4,max(1,r.w-12),max(1,r.h-8),
+                        enabled?textColor:lv_color_make(155,155,155),1);
 }
 static String homeAlarmTime(int minute) {
   const int m=((minute%1440)+1440)%1440;
