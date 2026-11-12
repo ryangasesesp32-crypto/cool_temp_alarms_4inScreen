@@ -1,10 +1,25 @@
 # Freenove Cooling Alarm — 4-inch Native LVGL
 
+## v1.37 — Approved screen changes (source and TXT ready)
+
+The latest Arduino source is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino), with an identical downloadable [CoolingAlarm_Freenove_v1_37.txt](./CoolingAlarm_Freenove_v1_37.txt). Target: Freenove FNK0114S 480 × 320 landscape, LVGL 8.4.0.
+
+- Center native button labels horizontally and vertically. Choose the largest fitting supported font, never smaller than 18px, and show `...` for overflow.
+- Keep PREV and NEXT adjacent throughout the navigation. Unavailable directions remain grey and disabled.
+- **Advanced Settings:** show live `Device Mode: Test` or `Device Mode: Production` right-justified on the title line.
+- **View Roster:** 3 columns × 3 rows, nine cooks per page, first names only, alphabetically sorted, larger spaces, and HOME | PREV | NEXT navigation.
+- **View Recipes:** copy Create Alarm's recipe-selection styling: black background, purple cards with teal borders in a 2 × 3 grid, automatic two-line fit, and Page | BACK | PREV | NEXT.
+- **Recipe Information:** compact 63px recipe panel with centered smart-fit label, venue and type below, and a 63px full-width BACK button.
+- **Edit Alarm:** equal-width first-name / time / c1-c2 top controls; time shown with AM/PM and smart 24px bold font; smart-fit recipe text; full PENDING/DONE/CANCELLED labels.
+- Unchanged: alarm scheduling, Google Sheets behavior, existing HOME layout, Alarm Due acknowledgements/chirps/LEDs, confirmation rules, and physical button behavior.
+
+**Testing status:** source-level checks and screen touchbox geometry checks passed. Arduino compilation and on-device validation of v1.37 have **not** yet been performed here. The OTA manifest deliberately remains at **v1.36**, which has a published release asset, until a matching v1.37 firmware binary is built and tested. Do not change the OTA manifest to v1.37 before creating and verifying its .bin file.
+
 ## v1.36 — Approved screen updates (source staged for testing)
 
 The Arduino source is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino). A matching copy suitable for downloading as plain text is [CoolingAlarm_Freenove_v1_36.txt](./CoolingAlarm_Freenove_v1_36.txt). Target: Freenove FNK0114S 480 × 320 landscape touch display with LVGL 8.4.0.
 
-**Development status:** v1.36 firmware source is on `main`; it has passed source-level checks of navigation hit regions and expected UI code paths. A compiled binary and hardware validation have **not** been performed in this session. The [OTA manifest](./firmware.json) remains v1.35 until a matching v1.36 binary is compiled, attached to a release, and verified.
+**Development status:** v1.36 firmware source is on `main`; it has passed source-level checks of navigation hit regions and expected UI code paths. A compiled binary and hardware validation have **not** been performed in this session. The OTA manifest currently targets the published v1.36 release. These notes describe the earlier v1.36 source-staging phase.
 
 ### Screen changes
 - **View Alarms:** 3 × 2 cards, six alarms per page. First line `c1 02:24 AM Brian`; second line recipe name. No title. Bottom navigation `page | HOME | PREV | NEXT` with disabled grey PREV/NEXT when unavailable. Cancelled alarms remain hidden.
