@@ -13166,9 +13166,12 @@ static void nativeRender(){
       for(int slot=0;slot<COOKING_GUIDE_PER_PAGE;slot++) {
         const int j=cookingGuidePage*COOKING_GUIDE_PER_PAGE+slot;
         if(j>=COOKING_GUIDE_ITEMS)break;
-        const Rect r={8,52+slot*48,304,45};
+        // 64px-tall cards allow three full 18px lines without truncation.
+        const Rect r={8,52+slot*50,304,48};
         ntile(r,PANEL);
-        ntext(String(COOKING_GUIDE[j].label),{r.x+6,r.y+2,r.w-54,r.h-4},WHITE,false);
+        lv_obj_t* guideLabel=ntext(String(COOKING_GUIDE[j].label),
+                                   {r.x+6,r.y+1,r.w-54,r.h-2},WHITE,false);
+        if(guideLabel)lv_obj_set_style_text_line_space(guideLabel,-3,0);
         ntext(String(COOKING_GUIDE[j].degC)+"\xC2\xB0" "C",
               {r.x+r.w-44,r.y+11,40,23},TEAL,true);
       }
