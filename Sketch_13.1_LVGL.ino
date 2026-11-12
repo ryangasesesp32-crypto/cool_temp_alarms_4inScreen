@@ -9484,7 +9484,8 @@ static const char* FIRMWARE_VERSION = "v1.38"; // Freenove-only OTA version; ori
 static const char* FREENOVE_BUILD_ID = "LVGL-F4-ApprovedScreens-v1.38";
 static const char* GITHUB_OTA_MANIFEST_URL = "https://raw.githubusercontent.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/main/firmware.json";
 // SAFETY: do not point this board at the ELEGOO production manifest.
-// Only set a FREENOVE-specific manifest after its release binary exists.
+// The Freenove manifest may point to a staged draft release; OTA download will
+// work only after the matching binary is attached and the release published.
 static const char* FREENOVE_OTA_RELEASE_PREFIX = "https://github.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/releases/download/freenove-v";
 static const char* WORK_WIFI_SSID = "Whole Foods Market";
 static const char* WORK_WIFI_PASSWORD = "";  // Open work Wi-Fi, no password.
