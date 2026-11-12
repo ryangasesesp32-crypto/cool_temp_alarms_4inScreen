@@ -1,5 +1,27 @@
 # Freenove Cooling Alarm — 4-inch Native LVGL
 
+## v1.39 — Google Sheets configurable Alarm Due buzzer cadence (source ready)
+
+The current [Arduino sketch](./Sketch_13.1_LVGL.ino) and matching downloadable [plain-text copy](./CoolingAlarm_Freenove_v1_39.txt) target the Freenove FNK0114S 480×320 LVGL 8.4.0 device.
+
+The **independent** Google Sheets `action=config` endpoint is already read at **every startup**, even when `UpdateDataNow` is `No`. v1.39 adds these settings (milliseconds) to that response:
+
+| Sheet setting | Apps Script JSON key | Example | Accepted range |
+| --- | --- | ---: | ---: |
+| `Chirp` | `chirp` | 20 | 10–1000 ms |
+| `PauseBetweenChirp` | `pauseBetweenChirp` | 20 | 10–5000 ms |
+| `PauseBetweenLoop` | `pauseBetweenLoop` | 4000 | 100–120000 ms |
+
+The firmware accepts the exact Sheet-case keys as alternatives. The deployed Apps Script **must include all three fields** in its `{ "success": true, "config": { ... } }` response. Updating the cells alone is **not sufficient** unless Apps Script already forwards them. An example is `"chirp":20, "pauseBetweenChirp":20, "pauseBetweenLoop":4000` in the `config` object.
+
+- Accept numeric JSON values or digit-only strings; **apply all three together** only if all are valid. No partial settings change.
+- Persist last-known-good alarm timings in ESP32 NVS; restore them before the network request on reset, and retain them if offline or missing/invalid in the response.
+- Defaults on an unconfigured device: five 60ms chirps, four 30ms gaps, 2000ms rest. With the example Sheet values, five chirps occupy 100ms + 80ms gaps + 4000ms rest = **4180ms per cycle**.
+- The Alarm Due chirp cadence stays **non-blocking** and continues synchronizing the red LED and flashing screen border.
+- **Normal button chirp stays 20ms; confirmation chirps stay 60ms / 20ms / 60ms.** The five-chirp count, alarm scheduling and all other UI and Sheets data-update behavior stay the same.
+
+**Release status:** Source only until Arduino compilation and on-device validation. The [v1.39 release](https://github.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/releases) is staged as a **draft** to receive a matching `Sketch_13.1_LVGL.ino.bin`; publishing it activates the v1.39 binary URL. The OTA manifest may be prepared in advance at the user's request; doing so **will cause OTA downloads to fail** until the binary has been attached and the release published.
+
 ## v1.38 — Global button-label font limit (source ready)
 
 The current development sketch is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino) and its identical downloadable plain-text copy is [CoolingAlarm_Freenove_v1_38.txt](./CoolingAlarm_Freenove_v1_38.txt). Target: Freenove FNK0114S 480 × 320 landscape, LVGL 8.4.0.
