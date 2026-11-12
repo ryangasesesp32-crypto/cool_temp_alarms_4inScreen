@@ -1,0 +1,29 @@
+name: Create Freenove v1.33 draft release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-v1-33-draft-release.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create v1.33 draft (no OTA activation)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "freenove-v1.33" >/dev/null 2>&1; then
+            echo "freenove-v1.33 already exists"
+          else
+            gh release create "freenove-v1.33" \
+              --target main \
+              --title "Freenove Cooling Alarm v1.33 — Recipe Search Test" \
+              --notes "Test build: native LVGL on-screen recipe keyboard, local live filtering, six recipes per page, and BACK/PREV/NEXT pagination. Compile and test the matching source before attaching Sketch_13.1_LVGL.ino.bin. This draft does not change firmware.json." \
+              --draft
+          fi
