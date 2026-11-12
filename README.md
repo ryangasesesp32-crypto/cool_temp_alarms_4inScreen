@@ -2,7 +2,7 @@
 
 ## v1.36 — Approved screen updates (source staged for testing)
 
-The Arduino source is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino). Target: Freenove FNK0114S 480 × 320 landscape touch display with LVGL 8.4.0.
+The Arduino source is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino). A matching copy suitable for downloading as plain text is [CoolingAlarm_Freenove_v1_36.txt](./CoolingAlarm_Freenove_v1_36.txt). Target: Freenove FNK0114S 480 × 320 landscape touch display with LVGL 8.4.0.
 
 **Development status:** v1.36 firmware source is on `main`; it has passed source-level checks of navigation hit regions and expected UI code paths. A compiled binary and hardware validation have **not** been performed in this session. The [OTA manifest](./firmware.json) remains v1.35 until a matching v1.36 binary is compiled, attached to a release, and verified.
 
