@@ -1300,7 +1300,7 @@ static const lv_font_t cool_mono_regular_18 = {
   .underline_position=-1,
   .underline_thickness=1,
   .dsc=&cool_mono_regular_18_dsc,
-  .fallback=&lv_font_montserrat_14,
+  .fallback=NULL,
 #if LV_USE_USER_DATA
   .user_data=NULL
 #endif
@@ -2099,7 +2099,7 @@ static const lv_font_t cool_mono_bold_16 = {
   .underline_position=-1,
   .underline_thickness=1,
   .dsc=&cool_mono_bold_16_dsc,
-  .fallback=&lv_font_montserrat_14,
+  .fallback=&cool_mono_regular_18,
 #if LV_USE_USER_DATA
   .user_data=NULL
 #endif
@@ -3184,7 +3184,7 @@ static const lv_font_t cool_mono_bold_20 = {
   .underline_position=-1,
   .underline_thickness=1,
   .dsc=&cool_mono_bold_20_dsc,
-  .fallback=&lv_font_montserrat_14,
+  .fallback=&cool_mono_regular_18,
 #if LV_USE_USER_DATA
   .user_data=NULL
 #endif
@@ -4614,7 +4614,7 @@ static const lv_font_t cool_mono_bold_24 = {
   .underline_position=-1,
   .underline_thickness=1,
   .dsc=&cool_mono_bold_24_dsc,
-  .fallback=&lv_font_montserrat_14,
+  .fallback=&cool_mono_regular_18,
 #if LV_USE_USER_DATA
   .user_data=NULL
 #endif
@@ -6505,7 +6505,7 @@ static const lv_font_t cool_mono_bold_28 = {
   .underline_position=-1,
   .underline_thickness=1,
   .dsc=&cool_mono_bold_28_dsc,
-  .fallback=&lv_font_montserrat_14,
+  .fallback=&cool_mono_regular_18,
 #if LV_USE_USER_DATA
   .user_data=NULL
 #endif
@@ -8892,7 +8892,7 @@ static const lv_font_t cool_mono_bold_32 = {
   .underline_position=-1,
   .underline_thickness=1,
   .dsc=&cool_mono_bold_32_dsc,
-  .fallback=&lv_font_montserrat_14,
+  .fallback=&cool_mono_regular_18,
 #if LV_USE_USER_DATA
   .user_data=NULL
 #endif
@@ -9434,7 +9434,7 @@ static const lv_font_t cool_mono_bold_12 = {
   .underline_position=-1,
   .underline_thickness=1,
   .dsc=&cool_mono_bold_12_dsc,
-  .fallback=&lv_font_montserrat_14,
+  .fallback=&cool_mono_regular_18,
   .user_data=NULL
 };
 
@@ -9480,8 +9480,8 @@ static StartupSerialMirror startupSerial(Serial);
 // PUBLIC OTA-SAFE build. Wi-Fi credentials and Apps Script token remain in
 // device Preferences (NVS), provisioned by the earlier v1.14 USB build.
 // Do not embed or publish private credentials in this source or binary.
-static const char* FIRMWARE_VERSION = "v1.34"; // Freenove-only OTA version; original alarm logic remains v1.31
-static const char* FREENOVE_BUILD_ID = "LVGL-F4-Approved-Screens-NoKeyboard-v1.34";
+static const char* FIRMWARE_VERSION = "v1.35"; // Freenove-only OTA version; original alarm logic remains v1.31
+static const char* FREENOVE_BUILD_ID = "LVGL-F4-SmartNav-Min18-NoKeyboard-v1.35";
 static const char* GITHUB_OTA_MANIFEST_URL = "https://raw.githubusercontent.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/main/firmware.json";
 // SAFETY: do not point this board at the ELEGOO production manifest.
 // Only set a FREENOVE-specific manifest after its release binary exists.
@@ -9696,7 +9696,8 @@ static lv_obj_t* homeLabel(const String&,int,int,int,int,
                            const lv_font_t*,lv_text_align_t,bool wrap=false);
 static uint16_t homeUtf8Chars(const String&);
 static void homeAutoFit(const String&,int,int);
-static void homeButton(const Rect&,const char*,lv_color_t,bool enabled=true);
+static void homeButton(const Rect&,const char*,lv_color_t,bool enabled=true,
+                       lv_color_t textColor=lv_color_white());
 static String homeAlarmTime(int);
 static String homeCookName(const char*);
 static void homeRefreshClockAndDate();
@@ -12476,7 +12477,7 @@ static void initFreenoveLVGL() {
 // ================= STARTUP SERIAL MONITOR MIRROR =================
 // Keep the most recent complete lines so the screen can scroll naturally.
 // Fixed buffers avoid unbounded String growth during HTTPS/OTA startup.
-static constexpr uint8_t BOOT_LOG_LINES=18;
+static constexpr uint8_t BOOT_LOG_LINES=14;
 static constexpr size_t BOOT_LOG_LINE_CHARS=128;
 // Heap allocation keeps the startup console's ~5 KB out of .dram0.bss.
 // The earlier fixed arrays caused a 1,840-byte ESP32 DRAM linker overflow.
@@ -12497,7 +12498,7 @@ static uint32_t bootLogLastPaint=0;
 // 480x320 screen whenever another serial message arrives.
 static lv_obj_t* bootLogScroll=nullptr;
 static lv_obj_t* bootLogRows[BOOT_LOG_LINES]={nullptr};
-static constexpr lv_coord_t BOOT_LOG_ROW_HEIGHT=17;
+static constexpr lv_coord_t BOOT_LOG_ROW_HEIGHT=22;
 
 static bool bootLogInitBuffers() {
   if(bootLogRing && bootLogText)return true;
@@ -12555,6 +12556,7 @@ static void bootLogScreenInit() {
   nativeHeaderText=nullptr;nativeDueEdge=nullptr;nativeStartupProgressBar=nullptr;
   lv_obj_set_style_bg_color(nativeRoot,lv_color_black(),0);
   lv_obj_set_style_bg_opa(nativeRoot,LV_OPA_COVER,0);
+  lv_obj_set_style_text_font(nativeRoot,&cool_mono_regular_18,0);
 
   bootLogScroll=lv_obj_create(nativeRoot);
   lv_obj_set_pos(bootLogScroll,0,0);
@@ -12574,14 +12576,10 @@ static void bootLogScreenInit() {
     bootLogRows[i]=row;
     lv_obj_set_pos(row,4,4+(lv_coord_t)i*BOOT_LOG_ROW_HEIGHT);
     lv_obj_set_size(row,PANEL_W-8,BOOT_LOG_ROW_HEIGHT);
-    lv_label_set_long_mode(row,LV_LABEL_LONG_CLIP);
+    lv_label_set_long_mode(row,LV_LABEL_LONG_DOT); // Never render below 18px.
     lv_obj_set_style_text_color(row,lv_color_make(225,239,234),0);
     lv_obj_set_style_text_align(row,LV_TEXT_ALIGN_LEFT,0);
-#if LV_FONT_UNSCII_8
-    lv_obj_set_style_text_font(row,&lv_font_unscii_8,0);
-#elif LV_FONT_MONTSERRAT_12
-    lv_obj_set_style_text_font(row,&lv_font_montserrat_12,0);
-#endif
+    lv_obj_set_style_text_font(row,&cool_mono_regular_18,0);
     lv_label_set_text(row,"");
   }
   if(lvTouchOverlay)lv_obj_add_flag(lvTouchOverlay,LV_OBJ_FLAG_HIDDEN);
@@ -12645,6 +12643,7 @@ static void nbase(bool withHeader=true) {
        screen==RECIPE_OPTIONS || (screen==VIEW_ROSTER && (rosterForCreate || rosterForEdit)));
   lv_obj_set_style_bg_color(nativeRoot,blackApproved?lv_color_black():nativeColor(NAVY),0);
   lv_obj_set_style_bg_opa(nativeRoot,LV_OPA_COVER,0);
+  lv_obj_set_style_text_font(nativeRoot,&cool_mono_regular_18,0); // Project minimum.
   if(withHeader) {
     // Exact HOME header: date left, time centered, version right.
     // No divider line, title box, or extra decoration on any screen.
@@ -12663,7 +12662,8 @@ static lv_obj_t* ntext(const String& s,Rect logical,uint16_t fg=WHITE,bool cente
   lv_obj_set_size(o,r.w,r.h);
   lv_obj_set_style_text_color(o,nativeColor(fg),0);
   lv_obj_set_style_text_align(o,centered?LV_TEXT_ALIGN_CENTER:LV_TEXT_ALIGN_LEFT,0);
-  lv_label_set_long_mode(o,LV_LABEL_LONG_WRAP);
+  lv_label_set_long_mode(o,LV_LABEL_LONG_DOT); // Wrap to height, then show ...
+  lv_obj_set_style_text_font(o,&cool_mono_regular_18,0);
   lv_label_set_text(o,s.c_str());
   return o;
 }
@@ -12695,9 +12695,9 @@ static void ntitle(const String& s,int page=0,int pages=0) {
   if(pages>0)ntext(String(page+1)+"/"+String(pages),{242,29,69,23},TEAL,true);
 }
 static void nnav(bool prev=true,bool next=true,const char* centerLabel="HOME") {
-  nbutton(NAV_PREV,"PREV",GREY,WHITE,prev);
+  nbutton(NAV_PREV,"PREV",BLUE,WHITE,prev);
   nbutton(NAV_HOME,centerLabel,BLUE);
-  nbutton(NAV_NEXT,"NEXT",GREY,WHITE,next);
+  nbutton(NAV_NEXT,"NEXT",BLUE,WHITE,next);
 }
 // HOME design Draft 2: direct native 480x320 coordinates (no framebuffer).
 // Preserve the other screens' current layouts until the HOME template is tested.
@@ -12707,7 +12707,7 @@ static lv_obj_t* homeLabel(const String &value,int x,int y,int w,int h,
   lv_obj_t* label=lv_label_create(nativeRoot);
   lv_obj_set_pos(label,x,y);
   lv_obj_set_size(label,w,h);
-  lv_label_set_long_mode(label,wrap?LV_LABEL_LONG_WRAP:LV_LABEL_LONG_CLIP);
+  lv_label_set_long_mode(label,wrap?LV_LABEL_LONG_DOT:LV_LABEL_LONG_CLIP);
   lv_obj_set_style_text_color(label,lv_color_white(),0);
   lv_obj_set_style_text_font(label,font,0);
   lv_obj_set_style_text_align(label,align,0);
@@ -12726,9 +12726,9 @@ static void homeAutoFit(const String& value,int y,int h) {
   // First select the largest font with an entire single line in 456px.
   static const lv_font_t* choices[] = {
     &cool_mono_bold_32,&cool_mono_bold_28,&cool_mono_bold_24,
-    &cool_mono_bold_20,&cool_mono_bold_16
+    &cool_mono_bold_20,&cool_mono_regular_18
   };
-  static const uint8_t cellPixels[] = {20,17,15,13,10};
+  static const uint8_t cellPixels[] = {20,17,15,13,11};
   const int maxW=456;
   const uint16_t glyphs=homeUtf8Chars(value);
   const lv_font_t* selected=choices[4];
@@ -12761,15 +12761,15 @@ static void uiLargeButton(Rect logical,const String& caption,uint16_t bg,
   const int longestLine=max(firstLineLength,secondLineLength);
   static const lv_font_t* fonts[]={
     &cool_mono_bold_28,&cool_mono_bold_24,&cool_mono_bold_20,
-    &cool_mono_bold_16,&cool_mono_bold_12
+    &cool_mono_regular_18
   };
-  static const int cell[]={17,15,13,10,8};
-  const lv_font_t* font=fonts[4];
+  static const int cell[]={17,15,13,11};
+  const lv_font_t* font=fonts[3]; // Minimum: 18px, never bold_16/12.
   int lines=1;
-  // Prefer one line, then the largest two-line font fitting within button.
+  // Prefer a complete single line; otherwise the largest complete two-line label.
   bool chosen=false;
   for(int trialLines=minLines;trialLines<=maxLines && !chosen;trialLines++) {
-    for(int i=0;i<5;i++) {
+    for(int i=0;i<4;i++) {
       const int cols=availableWidth/cell[i];
       if(cols>0 && (forcedBreak>=0?(longestLine<=cols):letters<=cols*trialLines) &&
          trialLines*(int)fonts[i]->line_height<=availableHeight) {
@@ -12777,17 +12777,22 @@ static void uiLargeButton(Rect logical,const String& caption,uint16_t bg,
       }
     }
   }
+  if(!chosen) {
+    // After reaching 18px, keep at most maxLines and show trailing dots.
+    lines=max(1,min(maxLines,availableHeight/(int)font->line_height));
+  }
+  const int labelH=min(availableHeight,lines*(int)font->line_height);
   lv_obj_t* label=lv_label_create(nativeRoot);
-  lv_obj_set_pos(label,r.x+7,r.y+max(2,(r.h-lines*(int)font->line_height)/2));
-  lv_obj_set_width(label,availableWidth);
-  lv_obj_set_height(label,availableHeight);
-  lv_label_set_long_mode(label,LV_LABEL_LONG_WRAP);
+  lv_obj_set_pos(label,r.x+7,r.y+max(2,(r.h-labelH)/2));
+  lv_obj_set_size(label,availableWidth,labelH);
+  lv_label_set_long_mode(label,LV_LABEL_LONG_DOT);
   lv_obj_set_style_text_font(label,font,0);
-  lv_obj_set_style_text_color(label,lv_color_white(),0);
+  lv_obj_set_style_text_color(label,enabled?lv_color_white():lv_color_make(155,155,155),0);
   lv_obj_set_style_text_align(label,LV_TEXT_ALIGN_CENTER,0);
   lv_label_set_text(label,caption.c_str());
 }
-static void homeButton(const Rect& logical,const char* caption,lv_color_t color,bool enabled) {
+static void homeButton(const Rect& logical,const char* caption,lv_color_t color,bool enabled,
+                       lv_color_t textColor) {
   Rect r=nbounds(logical);
   lv_obj_t* btn=lv_obj_create(nativeRoot);
   lv_obj_set_pos(btn,r.x,r.y);
@@ -12801,7 +12806,7 @@ static void homeButton(const Rect& logical,const char* caption,lv_color_t color,
   lv_obj_clear_flag(btn,LV_OBJ_FLAG_CLICKABLE); // Existing touch overlay handles tap.
   lv_obj_t* label=lv_label_create(btn);
   lv_label_set_text(label,caption);
-  lv_obj_set_style_text_color(label,lv_color_white(),0);
+  lv_obj_set_style_text_color(label,enabled?textColor:lv_color_make(155,155,155),0);
   lv_obj_set_style_text_font(label,&cool_mono_bold_20,0);
   lv_obj_set_style_text_letter_space(label,0,0);
   lv_obj_center(label);
@@ -12867,15 +12872,15 @@ static void nativeRender(){
       // The old HOME warned about an unverified clock; preserve that
       // safety warning while using this new, otherwise uncluttered layout.
       if(!timeSynced) {
-        lv_obj_t* clockWarn=homeLabel("CLOCK NOT VERIFIED",112,156,256,19,
-                                      &cool_mono_bold_16,LV_TEXT_ALIGN_CENTER);
+        lv_obj_t* clockWarn=homeLabel("CLOCK NOT VERIFIED",112,153,256,24,
+                                      &cool_mono_regular_18,LV_TEXT_ALIGN_CENTER);
         lv_obj_set_style_text_color(clockWarn,lv_color_make(255,213,40),0);
       }
       // Only visually disable actions that existing touch routing disables.
       homeButton(HOME_DONE,"DONE",lv_color_make(87,199,90),idx>=0);
       homeButton(HOME_CREATE,"CREATE ALARMS",lv_color_make(224,58,43),true);
       homeButton(HOME_ALARMS,"VIEW ALARMS",lv_color_make(82,43,237),countVisibleAlarms()>0);
-      homeButton(HOME_SETTINGS,"SETTINGS",lv_color_make(191,200,0),true);
+      homeButton(HOME_SETTINGS,"SETTINGS",lv_color_make(255,214,0),true,lv_color_black());
       break;
     }
     case SETTINGS: {
@@ -12915,9 +12920,9 @@ static void nativeRender(){
         ntile(row,bg,sorted[p]==selectedAlarm?TEAL:DIM,4);
         ntext(String(a.initials)+" "+clockHHMM(a.whenMin)+" c"+String(a.stage)+" "+String(a.recipe),{row.x+5,row.y+4,row.w-10,row.h-6},fg);
       }
-      nbutton(LIST_NAV_PREV,"PREV",GREY,WHITE,alarmFirst>0);
+      nbutton(LIST_NAV_PREV,"PREV",BLUE,WHITE,alarmFirst>0);
       nbutton(LIST_NAV_HOME,"HOME");
-      nbutton(LIST_NAV_NEXT,"NEXT",GREY,WHITE,alarmFirst+4<visibleAlarmCount);
+      nbutton(LIST_NAV_NEXT,"NEXT",BLUE,WHITE,alarmFirst+4<visibleAlarmCount);
       break;
     }
     case ALARM_DETAILS: {
@@ -12944,10 +12949,10 @@ static void nativeRender(){
           uiLargeButton(cookSelectionCard(i),cookFirstName(ci),UI_PURPLE,TEAL,true,2);
         }
         // Small page indicator above the navigation buttons.
-        ntext(String(rosterPage+1)+" / "+String(pages),{122,185,76,16},WHITE,true);
+        ntext(String(rosterPage+1)+" / "+String(pages),{122,182,76,22},WHITE,true);
         uiLargeButton(COOK_SELECT_BACK,"BACK",DARK_RED,RED,true,1);
-        uiLargeButton(COOK_SELECT_PREV,"PREV",GREY,GREY,rosterPage>0,1);
-        uiLargeButton(COOK_SELECT_NEXT,"NEXT",GREY,GREY,(rosterPage+1)*COOK_SELECT_PER_PAGE<COOK_COUNT,1);
+        uiLargeButton(COOK_SELECT_PREV,"PREV",UI_DARK_BLUE,TEAL,rosterPage>0,1);
+        uiLargeButton(COOK_SELECT_NEXT,"NEXT",UI_DARK_BLUE,TEAL,(rosterPage+1)*COOK_SELECT_PER_PAGE<COOK_COUNT,1);
       } else {
         const int pages=max(1,(COOK_COUNT+ROSTER_PER_PAGE-1)/ROSTER_PER_PAGE);
         rosterPage=constrain(rosterPage,0,pages-1);
@@ -12984,9 +12989,9 @@ static void nativeRender(){
         ntile(r,PANEL);
         ntext(String(recipes[recipeOrder[ri]].name),{r.x+5,r.y+1,r.w-10,r.h-2});
       }
-      nbutton(NAV_PREV,"PREV",GREY,WHITE,viewRecipePage>0);
+      nbutton(NAV_PREV,"PREV",BLUE,WHITE,viewRecipePage>0);
       nbutton(NAV_HOME,"BACK");
-      nbutton(NAV_NEXT,"NEXT",GREY,WHITE,(viewRecipePage+1)*RECIPE_REFERENCE_PER_PAGE<RECIPE_COUNT);
+      nbutton(NAV_NEXT,"NEXT",BLUE,WHITE,(viewRecipePage+1)*RECIPE_REFERENCE_PER_PAGE<RECIPE_COUNT);
       break;
     }
     case RECIPE_INFO: {
@@ -13018,8 +13023,8 @@ static void nativeRender(){
         }
         uiLargeButton(GUIDED_PAGE,String(recipePage+1)+"/"+String(pages),PANEL,DIM,true,1);
         uiLargeButton(GUIDED_RECIPE_BACK,"BACK",DARK_RED,RED,true,1);
-        uiLargeButton(GUIDED_RECIPE_PREV,"PREV",GREY,DIM,recipePage>0,1);
-        uiLargeButton(GUIDED_RECIPE_NEXT,"NEXT",GREY,DIM,(recipePage+1)*6<count,1);
+        uiLargeButton(GUIDED_RECIPE_PREV,"PREV",UI_DARK_BLUE,TEAL,recipePage>0,1);
+        uiLargeButton(GUIDED_RECIPE_NEXT,"NEXT",UI_DARK_BLUE,TEAL,(recipePage+1)*6<count,1);
       } else {
         ntext(optionField==FIELD_VENUE?"SELECT VENUE":"SELECT TYPE",{8,5,304,23},WHITE,true);
         if(!count)nline("No active recipes",101,TEAL);
@@ -13036,11 +13041,11 @@ static void nativeRender(){
     case CREATE_ALARM: {
       uiLargeButton(CREATE_COOK,selectedCook>=0?String(cooks[selectedCook].name):"COOK",UI_DARK_BLUE,TEAL,true,2);
       uiLargeButton(CREATE_RECIPE,selectedRecipe>=0?String(recipes[selectedRecipe].name):"RECIPE",UI_DARK_BLUE,TEAL,true,2);
-      uiLargeButton(CREATE_C1,String("c1 ")+homeAlarmTime(createC1Min)+"\nEDIT TIME",UI_PURPLE,TEAL,true,2);
-      uiLargeButton(CREATE_C2,String("c2 ")+homeAlarmTime(createC2Min)+"\nEDIT TIME",UI_PURPLE,TEAL,true,2);
-      if(createSaveError)ntext("SAVE FAILED - RETRY",{8,180,304,14},RED,true);
-      else if(!createTimesValid())ntext("CHECK ALARM ORDER",{8,180,304,14},YELLOW,true);
-      else if(!allowNewCoolingPair())ntext("PAST 10:15 PM",{8,180,304,14},YELLOW,true);
+      uiLargeButton(CREATE_C1,String("c1 ")+homeAlarmTime(createC1Min),UI_PURPLE,TEAL,true,1);
+      uiLargeButton(CREATE_C2,String("c2 ")+homeAlarmTime(createC2Min),UI_PURPLE,TEAL,true,1);
+      if(createSaveError)ntext("SAVE FAILED - RETRY",{8,176,304,17},RED,true);
+      else if(!createTimesValid())ntext("CHECK ALARM ORDER",{8,176,304,17},YELLOW,true);
+      else if(!allowNewCoolingPair())ntext("PAST 10:15 PM",{8,176,304,17},YELLOW,true);
       uiLargeButton(CREATE_CANCEL,"CANCEL",DARK_RED,RED,true,1);
       uiLargeButton(CREATE_OK,"CREATE",GREEN,TEAL,
         selectedCook>=0 && selectedRecipe>=0 && allowNewCoolingPair() && createTimesValid(),1);
@@ -13121,9 +13126,9 @@ static void nativeRender(){
         Rect r={8,54+i*24,304,22};ntile(r,PANEL);
         ntext(String(COOKING_GUIDE[j].label)+"     "+String(COOKING_GUIDE[j].degC)+" C",{r.x+5,r.y+2,r.w-10,r.h-3});
       }
-      nbutton(GUIDE_PREV,"PREV",GREY,WHITE,cookingGuidePage>0);
+      nbutton(GUIDE_PREV,"PREV",BLUE,WHITE,cookingGuidePage>0);
       nbutton(GUIDE_BACK,"BACK",GREY);
-      nbutton(GUIDE_NEXT,"NEXT",GREY,WHITE,cookingGuidePage<1);
+      nbutton(GUIDE_NEXT,"NEXT",BLUE,WHITE,cookingGuidePage<1);
       break;
     }
     case CALIBRATE_TARGETS: {
