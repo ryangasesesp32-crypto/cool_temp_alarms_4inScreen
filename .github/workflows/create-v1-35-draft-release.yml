@@ -1,4 +1,4 @@
-name: Create Freenove v1.35 draft release
+name: Publish Freenove v1.35 release
 
 on:
   push:
@@ -10,20 +10,22 @@ permissions:
   contents: write
 
 jobs:
-  draft-release:
+  publish-release:
     runs-on: ubuntu-latest
     steps:
-      - name: Create v1.35 draft (do not activate OTA)
+      - name: Publish Freenove v1.35 release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           if gh release view "freenove-v1.35" >/dev/null 2>&1; then
-            echo "freenove-v1.35 already exists"
+            gh release edit "freenove-v1.35" \
+              --draft=false \
+              --title "Freenove Cooling Alarm v1.35 — Smart Navigation & 18px Minimum UI" \
+              --notes "Source v1.35: smart PREV/NEXT, 18px minimum fonts with ellipses, simplified C1/C2 time buttons, and yellow SETTINGS with black text. The compiled Sketch_13.1_LVGL.ino.bin has not been uploaded yet; OTA installs will fail until a compiled binary is attached. Test on spare hardware before using OTA."
           else
             gh release create "freenove-v1.35" \
               --target main \
               --title "Freenove Cooling Alarm v1.35 — Smart Navigation & 18px Minimum UI" \
-              --notes "Staged source for hardware testing: smart PREV/NEXT, 18px minimum font and ellipsis, simplified C1/C2 time labels, yellow HOME Settings with black text. Compile and test the sketch before attaching a matching Sketch_13.1_LVGL.ino.bin. Do not update firmware.json until the verified binary is published." \
-              --draft
+              --notes "Source v1.35 available. Compiled Sketch_13.1_LVGL.ino.bin not yet attached; OTA not ready."
           fi
