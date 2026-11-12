@@ -1,0 +1,30 @@
+name: Create Freenove v1.39 draft release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-v1-39-draft-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stage v1.39 firmware release for manual upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "freenove-v1.39" >/dev/null 2>&1; then
+            echo "Existing v1.39 release retained"
+          else
+            gh release create "freenove-v1.39" \
+              --target main \
+              --title "Freenove Cooling Alarm v1.39 — Configurable Alarm Chirps" \
+              --notes "v1.39 source and matching TXT are on main. Reads Chirp, PauseBetweenChirp and PauseBetweenLoop from action=config every reboot (independent of UpdateDataNow), validates and persists last-known-good values, and uses a nonblocking five-chirp Alarm Due cycle. Button acknowledgement remains unchanged. IMPORTANT: Apps Script action=config must return the three fields. Source is not yet compiled or device-tested. Upload Sketch_13.1_LVGL.ino.bin built from v1.39 source, then publish. firmware.json may be staged for v1.39 and OTA will not work until the release with the matching binary is published." \
+              --draft
+          fi
