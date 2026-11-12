@@ -18,6 +18,7 @@ It keeps the v1.40 solid red Alarm Due border and changes only the following:
 Not changed (reviewed, left as is): OTA and Sheets HTTPS still use `setInsecure()` (no certificate check); the Sheets token is still sent in the URL; venues/types are still a fixed list; Config replies over about 4,000 bytes are applied but cannot be backed up to NVS. The buzzer on GPIO18 does not conflict with the display: Freenove's FNK0114S setup uses HSPI on GPIO 12/13/14/15.
 
 - [Arduino source](./Sketch_13.1_LVGL.ino) and identical [v1.41 text snapshot](./CoolingAlarm_Freenove_v1_41.txt).
+- **OTA is still v1.39.** [firmware.json](./firmware.json) stays on the published v1.39 binary until a `freenove-v1.41` release with the compiled `Sketch_13.1_LVGL.ino.bin` (SHA-256 `46c351122bfaf61f623008e31136295dc355055b4d05a2627019472dfcb01e9d`) is published.
 
 ## v1.40 — Solid red Alarm Due border diagnostic (source only)
 
