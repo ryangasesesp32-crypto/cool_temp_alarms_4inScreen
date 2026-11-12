@@ -22,7 +22,7 @@ jobs:
             gh release edit "freenove-v1.35" \
               --draft=false \
               --title "Freenove Cooling Alarm v1.35 — Smart Navigation & 18px Minimum UI" \
-              --notes "Source v1.35: smart PREV/NEXT, 18px minimum fonts with ellipses, simplified C1/C2 time buttons, and yellow SETTINGS with black text. The compiled Sketch_13.1_LVGL.ino.bin has not been uploaded yet; OTA installs will fail until a compiled binary is attached. Test on spare hardware before using OTA."
+              --notes "Source v1.35: smart PREV/NEXT, 18px minimum fonts with ellipses, simplified C1/C2 time buttons, and yellow SETTINGS with black text. The Sketch_13.1_LVGL.ino.bin release asset is attached. Its source correspondence and hardware behavior have not been independently verified here; test on the spare Freenove before deploying to onsite hardware."
           else
             gh release create "freenove-v1.35" \
               --target main \
