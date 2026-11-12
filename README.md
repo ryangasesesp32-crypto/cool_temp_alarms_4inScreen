@@ -20,11 +20,11 @@ The firmware accepts the exact Sheet-case keys as alternatives. The deployed App
 - The Alarm Due chirp cadence stays **non-blocking** and continues synchronizing the red LED and flashing screen border.
 - **Normal button chirp stays 20ms; confirmation chirps stay 60ms / 20ms / 60ms.** The five-chirp count, alarm scheduling and all other UI and Sheets data-update behavior stay the same.
 
-**Release status:** Source only until Arduino compilation and on-device validation. The [v1.39 release](https://github.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/releases) is staged as a **draft** to receive a matching `Sketch_13.1_LVGL.ino.bin`; publishing it activates the v1.39 binary URL. The OTA manifest may be prepared in advance at the user's request; doing so **will cause OTA downloads to fail** until the binary has been attached and the release published.
+**Release status:** Source only until Arduino compilation and on-device validation. The [v1.39 release](https://github.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/releases) is staged as a **draft** to receive a matching `Sketch_13.1_LVGL.ino.bin`; publishing it activates the v1.39 binary URL. At the user's request, [`firmware.json`](./firmware.json) has **already been staged for v1.39**. **OTA download will fail until a matching compiled binary is attached and the draft release is published.**
 
 ## v1.38 — Global button-label font limit (source ready)
 
-The current development sketch is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino) and its identical downloadable plain-text copy is [CoolingAlarm_Freenove_v1_38.txt](./CoolingAlarm_Freenove_v1_38.txt). Target: Freenove FNK0114S 480 × 320 landscape, LVGL 8.4.0.
+The archived v1.38 source is [CoolingAlarm_Freenove_v1_38.txt](./CoolingAlarm_Freenove_v1_38.txt); the current development sketch is now v1.39. Target: Freenove FNK0114S 480 × 320 landscape, LVGL 8.4.0.
 
 - **Every button label** now has a **20px bold maximum**, with centered horizontal/vertical alignment and smart fitting.
 - Long captions automatically step down to the available **18px regular** font (project minimum) and use `...` on overflow. One- and two-line buttons retain their permitted line counts.
