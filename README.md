@@ -1,8 +1,21 @@
 # Freenove Cooling Alarm — 4-inch Native LVGL
 
+## v1.40 — Solid red Alarm Due border diagnostic (source only)
+
+This **test build** isolates whether fast LVGL border redraws contribute to the visible screen wave and slower-sounding chirps on the Freenove FNK0114S.
+
+- On ALARM DUE, draw the same-thickness **solid red border** below the status header, continuously visible until the alarm is acknowledged.
+- **Do not update any LVGL border properties per chirp**. The screen, recipe, and DONE action remain as before.
+- **Do not change** the Google Sheets configurable chirp/gap/rest durations, the non-blocking five-chirp loop, external/onboard LED synchronization, button/confirmation sounds, alarm timing, storage, or OTA behavior.
+- This deliberately leaves existing `delay(8)` and LVGL handler behaviour unchanged, so it tests only the effect of removing border flashing.
+- [Arduino source](./Sketch_13.1_LVGL.ino) and identical [v1.40 text snapshot](./CoolingAlarm_Freenove_v1_40.txt).
+- **OTA is still v1.39.** The [firmware.json](./firmware.json) stays on the published v1.39 binary until v1.40 is compiled, attached to a release, and published. Source changes alone do not update the hardware.
+
+**Hardware test:** keep Config at your chosen chirp/gap/rest settings; compare the actual sound and check whether the screen wave disappears. If chirps are still slow, test timing independently of LVGL as the next experiment.
+
 ## v1.39 — Google Sheets configurable Alarm Due buzzer cadence (source ready)
 
-The current [Arduino sketch](./Sketch_13.1_LVGL.ino) and matching downloadable [plain-text copy](./CoolingAlarm_Freenove_v1_39.txt) target the Freenove FNK0114S 480×320 LVGL 8.4.0 device.
+The archived v1.39 [plain-text snapshot](./CoolingAlarm_Freenove_v1_39.txt) targets the Freenove FNK0114S 480×320 LVGL 8.4.0 device. The current Arduino sketch on main has since moved to v1.40 for the solid-border diagnostic.
 
 The **independent** Google Sheets `action=config` endpoint is already read at **every startup**, even when `UpdateDataNow` is `No`. v1.39 adds these settings (milliseconds) to that response:
 

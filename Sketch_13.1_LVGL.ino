@@ -1,3 +1,5 @@
+// Freenove v1.40 diagnostic: solid red Alarm Due border; buzzer and LEDs retain Sheets-configured cadence.
+// LVGL border is drawn once on entry, not on individual chirps. No timing changes made.
 // FREENOVE v1.32 — Phase 1: inactive Adafruit GFX/4-bit drawing code removed.
 // Original native LVGL, touch hitbox routing, Google Sheets, OTA, alarms,
 // LittleFS, NVS, time calculations and startup console are unchanged.
@@ -9480,8 +9482,8 @@ static StartupSerialMirror startupSerial(Serial);
 // PUBLIC OTA-SAFE build. Wi-Fi credentials and Apps Script token remain in
 // device Preferences (NVS), provisioned by the earlier v1.14 USB build.
 // Do not embed or publish private credentials in this source or binary.
-static const char* FIRMWARE_VERSION = "v1.39"; // Freenove-only OTA version; original alarm logic remains v1.31
-static const char* FREENOVE_BUILD_ID = "LVGL-F4-ConfigBuzzer-v1.39";
+static const char* FIRMWARE_VERSION = "v1.40"; // Freenove-only OTA version; original alarm logic remains v1.31
+static const char* FREENOVE_BUILD_ID = "LVGL-F4-SolidDueBorder-Test-v1.40";
 static const char* GITHUB_OTA_MANIFEST_URL = "https://raw.githubusercontent.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/main/firmware.json";
 // SAFETY: do not point this board at the ELEGOO production manifest.
 // The Freenove manifest may point to a staged draft release; OTA download will
@@ -9723,7 +9725,6 @@ static void nativeRender();
 static void nativeStartupMessage(const String& a,const String& b,const String& c);
 static void nativeProgress(int percent);
 static void nativeRefreshHeader();
-static void nativeUpdateDueBorder(bool active);
 static void selectCookPrepare();
 static String cookFirstName(int index);
 static void uiLargeButton(Rect r, const String& text, uint16_t bg, uint16_t border=0,
@@ -10457,10 +10458,9 @@ void acknowledgeConfirmation() {
 void setAlert(bool on) {
   if(alertOn==on) return;
   alertOn=on;
-  if(screen==ALARM_DUE) {
-    nativeUpdateDueBorder(on);    // native LVGL border; no framebuffer
-  }
-  outputs(on);                    // LED and buzzer change with border
+  // v1.40 diagnostic: keep all LVGL work out of alarm ON/OFF transitions.
+  // The static solid-red border is created once when entering ALARM_DUE.
+  outputs(on);                    // LEDs and buzzer remain synchronized
 
 }
 
@@ -12944,12 +12944,6 @@ static void homeRefreshClockAndDate() {
 static void nativeRefreshHeader(){
   homeRefreshClockAndDate(); // same fixed date/time/version header on all eligible screens
 }
-static void nativeUpdateDueBorder(bool active) {
-  if(nativeDueEdge) {
-    lv_obj_set_style_border_color(nativeDueEdge,nativeColor(active?RED:NAVY),0);
-    lv_obj_set_style_border_width(nativeDueEdge,active?nx(8):0,0);
-  }
-}
 // Startup status screens are replaced by a persistent scrolling log.
 static void nativeStartupMessage(const String&,const String&,const String&) {
   bootLogShow(true);
@@ -13242,12 +13236,12 @@ static void nativeRender(){
       lv_obj_set_size(nativeDueEdge,PANEL_W,PANEL_H-ny(28));
       lv_obj_set_style_bg_opa(nativeDueEdge,LV_OPA_TRANSP,0);
       lv_obj_set_style_border_color(nativeDueEdge,nativeColor(RED),0);
-      lv_obj_set_style_border_width(nativeDueEdge,0,0);
+      // Fixed red 8-unit border for this diagnostic build: no per-chirp redraw.
+      lv_obj_set_style_border_width(nativeDueEdge,nx(8),0);
       lv_obj_set_style_radius(nativeDueEdge,0,0);
       lv_obj_set_style_pad_all(nativeDueEdge,0,0);
       lv_obj_clear_flag(nativeDueEdge,LV_OBJ_FLAG_CLICKABLE);
       lv_obj_clear_flag(nativeDueEdge,LV_OBJ_FLAG_SCROLLABLE);
-      nativeUpdateDueBorder(alertOn);
       break;
     }
     case COOLING_INFO: {
