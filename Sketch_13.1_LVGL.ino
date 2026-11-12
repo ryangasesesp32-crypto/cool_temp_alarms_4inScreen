@@ -9480,8 +9480,8 @@ static StartupSerialMirror startupSerial(Serial);
 // PUBLIC OTA-SAFE build. Wi-Fi credentials and Apps Script token remain in
 // device Preferences (NVS), provisioned by the earlier v1.14 USB build.
 // Do not embed or publish private credentials in this source or binary.
-static const char* FIRMWARE_VERSION = "v1.36"; // Freenove-only OTA version; original alarm logic remains v1.31
-static const char* FREENOVE_BUILD_ID = "LVGL-F4-ScreenReview-Min18-v1.36";
+static const char* FIRMWARE_VERSION = "v1.37"; // Freenove-only OTA version; original alarm logic remains v1.31
+static const char* FREENOVE_BUILD_ID = "LVGL-F4-ApprovedScreens-v1.37";
 static const char* GITHUB_OTA_MANIFEST_URL = "https://raw.githubusercontent.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/main/firmware.json";
 // SAFETY: do not point this board at the ELEGOO production manifest.
 // Only set a FREENOVE-specific manifest after its release binary exists.
@@ -9579,8 +9579,8 @@ static constexpr uint16_t GREEN  = 0x1407;
 static constexpr uint16_t BLUE   = 0x231D;
 static constexpr uint16_t YELLOW = 0xED81;
 static constexpr uint16_t BLACK  = 0x0000;
-static constexpr uint16_t SETTINGS_TEAL = 0x1471;
-static constexpr uint16_t SETTINGS_ORANGE = 0xDC04;
+static constexpr uint16_t SETTINGS_TEAL = 0x1471;  // distinct Settings button
+static constexpr uint16_t SETTINGS_ORANGE = 0xDC04; // distinct Settings button
 
 // Freenove original display.cpp already defines the single TFT_eSPI object.
 extern TFT_eSPI tft;
@@ -9729,7 +9729,7 @@ static bool validCreateClock(int value);
 static bool contains(const Rect &r, int x, int y);
 static Rect alarmCardAt(int row);
 static Rect rosterCardAt(int slot);
-static Rect recipeReferenceCardAt(int slot);
+// View Recipes reuses guidedRecipeCard() for both display and touch.
 static Rect guidedCategoryCard(int slot);
 static Rect guidedRecipeCard(int slot);
 static bool alarmPastDue(const Alarm &a);
@@ -9769,7 +9769,7 @@ static const Rect SETTINGS_BLANK_LEFT = {8, 148, 149, 40};
 static const Rect SETTINGS_BLANK_RIGHT = {163, 148, 149, 40};
 static const Rect SETTINGS_HOME = {8, 196, 149, 40};
 static const Rect SETTINGS_ADVANCED = {163, 196, 149, 40};
-// Advanced Settings uses the same 2-column x 4-row grid as Settings.
+// Advanced Settings now uses the same 2-column x 4-row grid as Settings.
 static const Rect ADV_RESTART = {8, 52, 149, 40};
 static const Rect ADV_CLEAR = {163, 52, 149, 40};
 static const Rect ADV_CALIBRATE = {8, 100, 149, 40};
@@ -9781,11 +9781,12 @@ static const Rect ADV_HOME = {163, 196, 149, 40};
 static const Rect VERIFY_RETRY = {8, 183, 148, 48};
 static const Rect VERIFY_SAVE = {164, 183, 148, 48};
 static const Rect VERIFY_TARGET = {139, 107, 42, 42};
-static const Rect NAV_PREV = {6, 208, 97, 29};
-static const Rect NAV_HOME = {111, 208, 98, 29};
-static const Rect NAV_NEXT = {217, 208, 97, 29};
-// Six alarms per page: 3 rows x 2 columns. Navigation: PAGE/HOME/PREV/NEXT.
-static constexpr int ALARMS_PER_PAGE=6;
+// Browse navigation: HOME | PREV | NEXT, with 24px visual gaps.
+static const Rect NAV_HOME = {8, 202, 91, 34};
+static const Rect NAV_PREV = {115, 202, 91, 34};
+static const Rect NAV_NEXT = {221, 202, 91, 34};
+// Six alarm cards in 3 rows x 2 columns; bottom row is PAGE/HOME/PREV/NEXT.
+static constexpr int ALARMS_PER_PAGE = 6;
 static const Rect LIST_NAV_PAGE = {6, 181, 74, 55};
 static const Rect LIST_NAV_HOME = {83, 181, 74, 55};
 static const Rect LIST_NAV_PREV = {160, 181, 74, 55};
@@ -9796,13 +9797,17 @@ static const Rect DETAIL_EDIT = {164, 185, 148, 50};
 static const Rect GUIDE_BACK = {8, 202, 92, 34};
 static const Rect GUIDE_PREV = {112, 202, 96, 34};
 static const Rect GUIDE_NEXT = {220, 202, 92, 34};
-static Rect alarmCardAt(int slot){return {8+(slot%2)*155,34+(slot/2)*49,149,44};}
-static constexpr int ROSTER_PER_PAGE = 6;
-
+static Rect alarmCardAt(int slot) {
+  return {8+(slot%2)*155,34+(slot/2)*49,149,44};
+}
+static constexpr int ROSTER_PER_PAGE = 9;
 static constexpr int RECIPE_REFERENCE_PER_PAGE = 6;
-static Rect rosterCardAt(int slot) { return {6+(slot%2)*157,48+(slot/2)*51,151,47}; }
-static Rect recipeReferenceCardAt(int slot) { return {8,48+slot*26,304,24}; }
-static const Rect RECIPE_INFO_BACK = {8, 205, 304, 32};
+// 3x3 View Roster grid, 24px horizontal / 12px vertical visual gaps.
+static Rect rosterCardAt(int slot) {
+  return {8+(slot%3)*107,52+(slot/3)*49,91,40};
+}
+// View Recipes reuses the proven 2x3 guidedRecipeCard() hitboxes.
+static const Rect RECIPE_INFO_BACK = {8, 187, 304, 47};
 // Create Alarm: large adjacent columns, neither an extra title nor START row.
 static const Rect CREATE_COOK = {8, 36, 73, 61};   // 25% cook / 75% recipe
 static const Rect CREATE_RECIPE = {86, 36, 226, 61};
@@ -9837,6 +9842,12 @@ static const Rect GUIDED_PREV = {8, 197, 92, 38};
 static const Rect GUIDED_NEXT = {220, 197, 92, 38};
 static const Rect CREATE_CANCEL = {8, 194, 148, 42};
 static const Rect CREATE_OK = {164, 194, 148, 42};
+// Equal-width edit controls. Stage is informational, so only name/time are tappable.
+static const Rect EDIT_COOK = {8, 51, 96, 43};
+static const Rect EDIT_CLOCK = {112, 51, 96, 43};
+static const Rect EDIT_STAGE = {216, 51, 96, 43};
+static const Rect EDIT_RECIPE = {8, 100, 304, 39};
+static const Rect EDIT_STATUS = {8, 145, 304, 39};
 static const Rect EDIT_DISCARD = {8, 190, 148, 43};
 static const Rect EDIT_SAVE = {164, 190, 148, 43};
 static const Rect CONFIRM_NO = {8, 184, 148, 46};
@@ -9866,8 +9877,9 @@ static int RECIPE_COUNT = 0;
 // Kept from the working v1.31.10 firmware (not a raster renderer).
 static int recipeOrder[MAX_RECIPES];
 
-// tblCookInfo v1.36 display-test reference. Current Apps Script data response
-// contains only config/cooks/recipes; these categories are not yet live-synced.
+// tblCookInfo cooking guide values approved for v1.36 display testing.
+// The existing Apps Script currently returns config/cooks/recipes only; this
+// local reference list is not yet automatically refreshed from tblCookInfo.
 struct CookingGuideEntry {const char *label; uint8_t degC;};
 static const CookingGuideEntry COOKING_GUIDE[] = {
   {"Whole Poultry and Stuffed Items",83},
@@ -10845,11 +10857,11 @@ static bool isAcceptedButtonTap(int x,int y) {
       }
       return false;
     case VIEW_RECIPES:
-      if(contains(NAV_HOME,x,y))return true;
-      if(contains(NAV_PREV,x,y))return viewRecipePage>0;
-      if(contains(NAV_NEXT,x,y))return (viewRecipePage+1)*RECIPE_REFERENCE_PER_PAGE<RECIPE_COUNT;
+      if(contains(GUIDED_RECIPE_BACK,x,y))return true;
+      if(contains(GUIDED_RECIPE_PREV,x,y))return viewRecipePage>0;
+      if(contains(GUIDED_RECIPE_NEXT,x,y))return (viewRecipePage+1)*RECIPE_REFERENCE_PER_PAGE<RECIPE_COUNT;
       for(int r=0;r<RECIPE_REFERENCE_PER_PAGE;r++) {
-        if(contains(recipeReferenceCardAt(r),x,y))
+        if(contains(guidedRecipeCard(r),x,y))
           return viewRecipePage*RECIPE_REFERENCE_PER_PAGE+r<RECIPE_COUNT;
       }
       return false;
@@ -10878,8 +10890,8 @@ static bool isAcceptedButtonTap(int x,int y) {
               allowNewCoolingPair() && createTimesValid());
     case EDIT_ALARM:
       return contains(EDIT_DISCARD,x,y) || contains(EDIT_SAVE,x,y) ||
-             contains({8,51,86,43},x,y) || contains({99,51,132,43},x,y) ||
-             contains({8,100,304,39},x,y) || contains({8,145,304,39},x,y);
+             contains(EDIT_COOK,x,y) || contains(EDIT_CLOCK,x,y) ||
+             contains(EDIT_RECIPE,x,y) || contains(EDIT_STATUS,x,y);
     case EDIT_TIME:
       return contains(editTimeAdjust(0),x,y) || contains(editTimeAdjust(1),x,y) ||
              contains(editTimeAdjust(2),x,y) || contains(editTimeAdjust(3),x,y) ||
@@ -10935,7 +10947,7 @@ void onTap(int x,int y) {
     case SETTINGS: {
       if(contains(SETTINGS_ROSTER,x,y)) {
         rosterForEdit=false;rosterForCreate=false;rosterPage=0;
-        rosterBrowseSelected=-1;
+        rosterBrowseSelected=-1;selectCookPrepare();
         pushScreen(VIEW_ROSTER);
       } else if(contains(SETTINGS_RECIPES,x,y)) {
         viewRecipePage=0;viewRecipeSelected=-1;pushScreen(VIEW_RECIPES);
@@ -11050,7 +11062,7 @@ void onTap(int x,int y) {
       for(int i=0;i<perPage;i++) {
         const int offset=rosterPage*perPage+i;
         if(offset>=COOK_COUNT)break;
-        const int ci=selection?cookSelectOrder[offset]:offset;
+        const int ci=cookSelectOrder[offset];
         const Rect r=selection?cookSelectionCard(i):rosterCardAt(i);
         if(contains(r,x,y)) {
           if(rosterForEdit) {
@@ -11068,11 +11080,11 @@ void onTap(int x,int y) {
       break;
     }
     case VIEW_RECIPES: {
-      if(contains(NAV_HOME,x,y)){goBack();break;}
-      if(contains(NAV_PREV,x,y)){if(viewRecipePage>0)viewRecipePage--;render();break;}
-      if(contains(NAV_NEXT,x,y)){if((viewRecipePage+1)*RECIPE_REFERENCE_PER_PAGE<RECIPE_COUNT)viewRecipePage++;render();break;}
+      if(contains(GUIDED_RECIPE_BACK,x,y)){goBack();break;}
+      if(contains(GUIDED_RECIPE_PREV,x,y)){if(viewRecipePage>0)viewRecipePage--;render();break;}
+      if(contains(GUIDED_RECIPE_NEXT,x,y)){if((viewRecipePage+1)*RECIPE_REFERENCE_PER_PAGE<RECIPE_COUNT)viewRecipePage++;render();break;}
       for(int r=0;r<RECIPE_REFERENCE_PER_PAGE;r++) {
-        if(!contains(recipeReferenceCardAt(r),x,y))continue;
+        if(!contains(guidedRecipeCard(r),x,y))continue;
         const int sortedIndex=viewRecipePage*RECIPE_REFERENCE_PER_PAGE+r;
         if(sortedIndex<RECIPE_COUNT) {
           viewRecipeSelected=recipeOrder[sortedIndex];
@@ -11139,12 +11151,12 @@ void onTap(int x,int y) {
     case EDIT_ALARM: {
       if(contains(EDIT_DISCARD,x,y))goViewAlarms();
       else if(contains(EDIT_SAVE,x,y))confirm(CA_SAVE_EDIT);
-      else if(contains({8,51,86,43},x,y)) {
+      else if(contains(EDIT_COOK,x,y)) {
         rosterForEdit=true;rosterForCreate=false;rosterPage=0;selectCookPrepare();pushScreen(VIEW_ROSTER);
-      } else if(contains({99,51,132,43},x,y))enterTimeEditor(draft.stage,false);
-      else if(contains({8,100,304,39},x,y)) {
+      } else if(contains(EDIT_CLOCK,x,y))enterTimeEditor(draft.stage,false);
+      else if(contains(EDIT_RECIPE,x,y)) {
         openChooseRecipe(true);
-      } else if(contains({8,145,304,39},x,y)) {
+      } else if(contains(EDIT_STATUS,x,y)) {
         draft.status=draft.status==AlarmStatus::Pending?AlarmStatus::Done:
           draft.status==AlarmStatus::Done?AlarmStatus::Cancelled:
           alarmPastDue(draft)?AlarmStatus::Done:AlarmStatus::Pending;
@@ -12647,7 +12659,7 @@ static void nbase(bool withHeader=true) {
   nativeHeaderText=nullptr;nativeDueEdge=nullptr;nativeStartupProgressBar=nullptr;
   homeDateText=nullptr;homeClockText=nullptr;homeVersionText=nullptr;
   const bool blackApproved=(screen==CREATE_ALARM || screen==EDIT_TIME ||
-       screen==RECIPE_OPTIONS || screen==CONFIRMATION || (screen==VIEW_ROSTER && (rosterForCreate || rosterForEdit)));
+       screen==RECIPE_OPTIONS || screen==VIEW_RECIPES || screen==CONFIRMATION || (screen==VIEW_ROSTER && (rosterForCreate || rosterForEdit)));
   lv_obj_set_style_bg_color(nativeRoot,blackApproved?lv_color_black():nativeColor(NAVY),0);
   lv_obj_set_style_bg_opa(nativeRoot,LV_OPA_COVER,0);
   lv_obj_set_style_text_font(nativeRoot,&cool_mono_regular_18,0); // Project minimum.
@@ -12690,9 +12702,38 @@ static lv_obj_t* ntile(Rect logical,uint16_t bg,uint16_t border=DIM,int radius=5
   if(!enabled)lv_obj_set_style_bg_color(o,nativeColor(GREY),0);
   return o;
 }
+// All button labels are centered horizontally AND vertically, with smart font fit.
+// Font size never drops below 18px; LVGL's DOT mode handles overflow.
 static void nbutton(Rect r,const String& text,uint16_t bg=BLUE,uint16_t fg=WHITE,bool enabled=true) {
   ntile(r,enabled?bg:GREY,enabled?DIM:GREY,5,enabled);
-  if(text.length())ntext(text,{r.x+4,r.y+(r.h>36?9:4),r.w-8,r.h-7},enabled?fg:DIM,true);
+  if(text.length()==0)return;
+  const Rect b=nbounds(r);
+  const int w=max(1,b.w-12),h=max(1,b.h-8);
+  static const lv_font_t* fonts[]={&cool_mono_bold_28,&cool_mono_bold_24,
+                                   &cool_mono_bold_20,&cool_mono_regular_18};
+  static const int cells[]={17,15,13,11};
+  const int chars=(int)homeUtf8Chars(text);
+  const lv_font_t* selected=fonts[3];
+  int lines=1;
+  bool fitted=false;
+  for(int n=1;n<=2 && !fitted;n++) {
+    for(int f=0;f<4;f++) {
+      const int columns=w/cells[f];
+      if(columns>0 && chars<=columns*n && n*(int)fonts[f]->line_height<=h) {
+        selected=fonts[f];lines=n;fitted=true;break;
+      }
+    }
+  }
+  if(!fitted) lines=max(1,min(2,h/(int)selected->line_height));
+  const int labelH=min(h,lines*(int)selected->line_height);
+  lv_obj_t* label=lv_label_create(nativeRoot);
+  lv_obj_set_pos(label,b.x+(b.w-w)/2,b.y+(b.h-labelH)/2);
+  lv_obj_set_size(label,w,labelH);
+  lv_obj_set_style_text_font(label,selected,0);
+  lv_obj_set_style_text_color(label,enabled?nativeColor(fg):nativeColor(DIM),0);
+  lv_obj_set_style_text_align(label,LV_TEXT_ALIGN_CENTER,0);
+  lv_label_set_long_mode(label,LV_LABEL_LONG_DOT);
+  lv_label_set_text(label,text.c_str());
 }
 static void nline(const String& s,int y,uint16_t c=WHITE,int height=24) {
   ntext(s,{8,y,304,height},c,true);
@@ -12702,8 +12743,8 @@ static void ntitle(const String& s,int page=0,int pages=0) {
   if(pages>0)ntext(String(page+1)+"/"+String(pages),{242,29,69,23},TEAL,true);
 }
 static void nnav(bool prev=true,bool next=true,const char* centerLabel="HOME") {
+  nbutton(NAV_HOME,centerLabel,GREEN,WHITE);
   nbutton(NAV_PREV,"PREV",BLUE,WHITE,prev);
-  nbutton(NAV_HOME,centerLabel,BLUE);
   nbutton(NAV_NEXT,"NEXT",BLUE,WHITE,next);
 }
 // HOME design Draft 2: direct native 480x320 coordinates (no framebuffer).
@@ -12864,7 +12905,7 @@ static void nativeProgress(int) {
   bootLogShow(false);
 }
 static void nativeRender(){
-  nbase(screen!=HOME && screen!=CALIBRATE_TARGETS && screen!=RECIPE_OPTIONS);
+  nbase(screen!=HOME && screen!=CALIBRATE_TARGETS && screen!=RECIPE_OPTIONS && screen!=VIEW_RECIPES);
   switch(screen) {
     case HOME: {
       // HOME Draft 2: LCD Wizard design, native LVGL, monospaced typography.
@@ -12886,8 +12927,8 @@ static void nativeRender(){
       // The old HOME warned about an unverified clock; preserve that
       // safety warning while using this new, otherwise uncluttered layout.
       if(!timeSynced) {
-        lv_obj_t* clockWarn=homeLabel("CLOCK NOT VERIFIED",112,153,256,24,
-                                      &cool_mono_regular_18,LV_TEXT_ALIGN_CENTER);
+        lv_obj_t* clockWarn=homeLabel("CLOCK NOT VERIFIED",112,156,256,19,
+                                      &cool_mono_bold_16,LV_TEXT_ALIGN_CENTER);
         lv_obj_set_style_text_color(clockWarn,lv_color_make(255,213,40),0);
       }
       // Only visually disable actions that existing touch routing disables.
@@ -12911,6 +12952,8 @@ static void nativeRender(){
     }
     case ADVANCED_SETTINGS: {
       ntitle("Advanced Settings");
+      homeLabel(String("Device Mode: ")+(deviceTestMode?"Test":"Production"),
+                213,39,256,29,&cool_mono_regular_18,LV_TEXT_ALIGN_RIGHT,false);
       nbutton(ADV_RESTART,"RESTART",YELLOW,BLACK);
       nbutton(ADV_CLEAR,"CLEAR ALL ALARMS",DARK_RED,WHITE);
       nbutton(ADV_CALIBRATE,"CALIBRATE SCREEN",SETTINGS_TEAL,WHITE);
@@ -12925,7 +12968,7 @@ static void nativeRender(){
       alarmFirst=constrain(alarmAnchor+ALARMS_PER_PAGE*alarmPageOffset,0,last);
       const int pages=max(1,(visibleAlarmCount+ALARMS_PER_PAGE-1)/ALARMS_PER_PAGE);
       const int page=alarmFirst/ALARMS_PER_PAGE;
-      // No view title. 2 lines per card, 6 cards per page.
+      // No VIEW ALARMS title; six 2-line cards start immediately below header.
       for(int slot=0;slot<ALARMS_PER_PAGE;slot++) {
         const int p=alarmFirst+slot;
         if(p>=visibleAlarmCount)break;
@@ -12985,12 +13028,12 @@ static void nativeRender(){
         rosterPage=constrain(rosterPage,0,pages-1);
         ntitle("View Roster",rosterPage,pages);
         for(int i=0;i<ROSTER_PER_PAGE;i++) {
-          int ci=rosterPage*ROSTER_PER_PAGE+i;
-          if(ci>=COOK_COUNT)break;
-          Rect r=rosterCardAt(i);
-          ntile(r,PANEL,ci==rosterBrowseSelected?TEAL:GREY);
-          ntext(String(cooks[ci].initials),{r.x+5,r.y+3,r.w-10,19},TEAL);
-          ntext(String(cooks[ci].name),{r.x+5,r.y+22,r.w-10,22},WHITE);
+          const int idx=rosterPage*ROSTER_PER_PAGE+i;
+          if(idx>=COOK_COUNT)break;
+          const int ci=cookSelectOrder[idx];
+          const Rect r=rosterCardAt(i);
+          uiLargeButton(r,cookFirstName(ci),PANEL,
+                        ci==rosterBrowseSelected?TEAL:GREY,true,2);
         }
         nnav(rosterPage>0,(rosterPage+1)*ROSTER_PER_PAGE<COOK_COUNT);
       }
@@ -13007,32 +13050,35 @@ static void nativeRender(){
       }
       const int pages=max(1,(RECIPE_COUNT+RECIPE_REFERENCE_PER_PAGE-1)/RECIPE_REFERENCE_PER_PAGE);
       viewRecipePage=constrain(viewRecipePage,0,pages-1);
-      ntitle("View Recipes",viewRecipePage,pages);
-      if(!RECIPE_COUNT)nline("No cached recipes",102,TEAL);
+      // Match Create Alarm > Choose Recipe: black BG, 2x3 purple/teal cards,
+      // no header, large centered names, and PAGE | BACK | PREV | NEXT.
+      if(!RECIPE_COUNT)nline("No cached recipes",101,TEAL);
       for(int i=0;i<RECIPE_REFERENCE_PER_PAGE;i++) {
-        const int ri=viewRecipePage*RECIPE_REFERENCE_PER_PAGE+i;
-        if(ri>=RECIPE_COUNT)break;
-        Rect r=recipeReferenceCardAt(i);
-        ntile(r,PANEL);
-        ntext(String(recipes[recipeOrder[ri]].name),{r.x+5,r.y+1,r.w-10,r.h-2});
+        const int index=viewRecipePage*RECIPE_REFERENCE_PER_PAGE+i;
+        if(index>=RECIPE_COUNT)break;
+        uiLargeButton(guidedRecipeCard(i),String(recipes[recipeOrder[index]].name),
+                      UI_PURPLE,TEAL,true,2);
       }
-      nbutton(NAV_PREV,"PREV",BLUE,WHITE,viewRecipePage>0);
-      nbutton(NAV_HOME,"BACK");
-      nbutton(NAV_NEXT,"NEXT",BLUE,WHITE,(viewRecipePage+1)*RECIPE_REFERENCE_PER_PAGE<RECIPE_COUNT);
+      uiLargeButton(GUIDED_PAGE,String(viewRecipePage+1)+"/"+String(pages),PANEL,DIM,true,1);
+      uiLargeButton(GUIDED_RECIPE_BACK,"BACK",DARK_RED,RED,true,1);
+      uiLargeButton(GUIDED_RECIPE_PREV,"PREV",UI_DARK_BLUE,TEAL,viewRecipePage>0,1);
+      uiLargeButton(GUIDED_RECIPE_NEXT,"NEXT",UI_DARK_BLUE,TEAL,
+                    (viewRecipePage+1)*RECIPE_REFERENCE_PER_PAGE<RECIPE_COUNT,1);
       break;
     }
     case RECIPE_INFO: {
       ntitle("Recipe Information");
-      if(viewRecipeSelected>=0&&viewRecipeSelected<RECIPE_COUNT) {
-        const RecipeInfo& r=recipes[viewRecipeSelected];
-        ntile({8,52,304,70},PANEL);
-        ntext(String(r.name),{16,66,288,51});
-        ntile({8,127,304,33},PANEL);
-        ntext(String("Venue: ")+(r.venue<VENUE_COUNT?String(VENUES[r.venue]):"Unknown"),{16,134,288,26});
-        ntile({8,165,304,33},PANEL);
-        ntext(String("Type: ")+(r.type<TYPE_COUNT?String(TYPES[r.type]):"Unknown"),{16,171,288,26});
+      if(viewRecipeSelected>=0 && viewRecipeSelected<RECIPE_COUNT) {
+        const RecipeInfo &r=recipes[viewRecipeSelected];
+        uiLargeButton({8,52,304,47},String(r.name),PANEL,DIM,true,2);
+        ntile({8,106,304,32},PANEL);
+        ntext(String("Venue: ")+(r.venue<VENUE_COUNT?String(VENUES[r.venue]):"Unknown"),
+              {16,111,288,24},WHITE,false);
+        ntile({8,143,304,32},PANEL);
+        ntext(String("Type: ")+(r.type<TYPE_COUNT?String(TYPES[r.type]):"Unknown"),
+              {16,148,288,24},WHITE,false);
       } else nline("No recipe selected",99,TEAL);
-      nbutton(RECIPE_INFO_BACK,"BACK");
+      nbutton(RECIPE_INFO_BACK,"BACK",BLUE,WHITE);
       break;
     }
     case RECIPE_OPTIONS: case CHOOSE_RECIPE: {
@@ -13080,14 +13126,17 @@ static void nativeRender(){
     }
     case EDIT_ALARM: {
       ntitle("Edit Alarm");
-      ntile({8,51,86,43},PANEL,TEAL);
-      ntile({99,51,132,43},PANEL,TEAL);ntile({236,51,76,43},PANEL);
-      ntext(String(draft.initials),{12,62,80,28});
-      ntext(clockHHMM(draft.whenMin),{103,62,120,28});
-      ntext(String("c")+String(draft.stage),{241,62,65,28});
-      ntile({8,100,304,39},PANEL,TEAL);ntext(String(draft.recipe),{13,109,294,27});
-      ntile({8,145,304,39},PANEL,TEAL);ntext(String("STATUS: ")+statusText(draft.status),{13,154,294,27});
-      nbutton(EDIT_DISCARD,"DISCARD",GREY);nbutton(EDIT_SAVE,"SAVE",GREEN);
+      // Three identically sized top controls; stage remains read-only.
+      uiLargeButton(EDIT_COOK,alarmFirstCookName(draft.initials),PANEL,TEAL,true,1);
+      uiLargeButton(EDIT_CLOCK,homeAlarmTime(draft.whenMin),PANEL,TEAL,true,1);
+      uiLargeButton(EDIT_STAGE,String("c")+String(draft.stage),PANEL,DIM,true,1);
+      // Largest fitting font, minimum 18px, two lines, then ellipsis.
+      uiLargeButton(EDIT_RECIPE,String(draft.recipe),PANEL,TEAL,true,2);
+      const String fullStatus=draft.status==AlarmStatus::Pending?"PENDING":
+                              draft.status==AlarmStatus::Done?"DONE":"CANCELLED";
+      uiLargeButton(EDIT_STATUS,String("STATUS: ")+fullStatus,PANEL,TEAL,true,1);
+      nbutton(EDIT_DISCARD,"DISCARD",GREY,WHITE);
+      nbutton(EDIT_SAVE,"SAVE",GREEN,WHITE);
       break;
     }
     case EDIT_TIME: {
@@ -13149,8 +13198,8 @@ static void nativeRender(){
     }
     case COOLING_INFO: {
       ntitle("COOLING GUIDE");
-      // Approved CoolInfo reference targets; existing C1/C2 scheduling unchanged.
-      // Sheets integration for this reference still needs an API data endpoint.
+      // Display the approved CoolInfo reference targets; alarm timing unchanged.
+      // Source-of-truth Apps Script integration remains a separate data-endpoint task.
       ntile({8,59,304,64},PANEL);ntile({8,130,304,64},PANEL);
       ntext("c1  +2 HOURS",{16,64,288,22},WHITE,false);
       ntext("60\xC2\xB0" "C -> BELOW 21\xC2\xB0" "C",{15,90,290,28},TEAL,true);
@@ -13166,7 +13215,7 @@ static void nativeRender(){
       for(int slot=0;slot<COOKING_GUIDE_PER_PAGE;slot++) {
         const int j=cookingGuidePage*COOKING_GUIDE_PER_PAGE+slot;
         if(j>=COOKING_GUIDE_ITEMS)break;
-        // 64px-tall cards allow three full 18px lines without truncation.
+        // Cards allow three full 18px lines without truncation.
         const Rect r={8,52+slot*50,304,48};
         ntile(r,PANEL);
         lv_obj_t* guideLabel=ntext(String(COOKING_GUIDE[j].label),
