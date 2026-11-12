@@ -12825,8 +12825,15 @@ static String homeAlarmTime(int minute) {
 static String homeCookName(const char* initials) {
   for(int i=0;i<COOK_COUNT;i++)
     if(strcasecmp(cooks[i].initials,initials)==0 && cooks[i].name[0])
-      return cookFirstName(i); // First name in alarm UI, with initials fallback.
+      return String(cooks[i].name); // Preserve approved v1.35 HOME behavior.
   return String(initials); // Keep alarm usable if the cook was removed from roster.
+}
+// Other alarm screens display the cook's first name, as approved for v1.36.
+static String alarmFirstCookName(const char* initials) {
+  for(int i=0;i<COOK_COUNT;i++)
+    if(strcasecmp(cooks[i].initials,initials)==0 && cooks[i].name[0])
+      return cookFirstName(i);
+  return String(initials);
 }
 static void homeRefreshClockAndDate() {
   if(homeDateText) {
@@ -12928,7 +12935,7 @@ static void nativeRender(){
         const Rect card=alarmCardAt(slot);
         ntile(card,bg,sorted[p]==selectedAlarm?TEAL:DIM,4);
         ntext(String("c")+String(a.stage)+" "+homeAlarmTime(a.whenMin)+" "+
-              homeCookName(a.initials),{card.x+4,card.y+3,card.w-8,20},fg);
+              alarmFirstCookName(a.initials),{card.x+4,card.y+3,card.w-8,20},fg);
         ntext(String(a.recipe),{card.x+4,card.y+23,card.w-8,19},fg);
       }
       ntile(LIST_NAV_PAGE,PANEL,0,5);
@@ -12946,7 +12953,7 @@ static void nativeRender(){
       const Alarm& a=alarms[selectedAlarm];
       ntile({8,32,304,45},PANEL);
       homeAutoFit(String("c")+String(a.stage)+" "+homeAlarmTime(a.whenMin)+" "+
-                  homeCookName(a.initials),45,57);
+                  alarmFirstCookName(a.initials),45,57);
       ntile({8,83,304,40},PANEL);
       homeAutoFit(String(a.recipe),110,53);
       const AlarmStatus st=detailPreviewChanged?detailPreviewStatus:a.status;
