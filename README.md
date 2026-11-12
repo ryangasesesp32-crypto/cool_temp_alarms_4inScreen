@@ -4,7 +4,7 @@
 
 The latest Arduino source is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino), with an identical downloadable [CoolingAlarm_Freenove_v1_37.txt](./CoolingAlarm_Freenove_v1_37.txt). Target: Freenove FNK0114S 480 × 320 landscape, LVGL 8.4.0.
 
-- Center native button labels horizontally and vertically. Choose the largest fitting supported font, never smaller than 18px, and show `...` for overflow.
+- **All button labels:** centered horizontally and vertically. **20px bold is the maximum**; automatically fall back to the available 18px regular font where needed, and show `...` if the caption still will not fit. Applies to HOME, Settings, Advanced Settings, selection and editing screens, and confirmation buttons. Non-button text (including HOME information and status header) keeps its existing sizing.
 - Keep PREV and NEXT adjacent throughout the navigation. Unavailable directions remain grey and disabled.
 - **Advanced Settings:** show live `Device Mode: Test` or `Device Mode: Production` right-justified on the title line.
 - **View Roster:** 3 columns × 3 rows, nine cooks per page, first names only, alphabetically sorted, larger spaces, and HOME | PREV | NEXT navigation.
