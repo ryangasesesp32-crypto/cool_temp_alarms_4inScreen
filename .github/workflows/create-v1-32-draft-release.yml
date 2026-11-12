@@ -1,0 +1,29 @@
+name: Create Freenove v1.32 draft release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-v1-32-draft-release.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create draft release without a binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "freenove-v1.32" >/dev/null 2>&1; then
+            echo "freenove-v1.32 already exists"
+          else
+            gh release create "freenove-v1.32" \
+              --target "main" \
+              --title "Freenove Cooling Alarm v1.32" \
+              --notes "HOME Draft 2: monospaced fonts and smart auto-fit; remove separate LED test; immediate task creation with two-chirp acknowledgment. Upload the Arduino-exported Sketch_13.1_LVGL.ino.bin and publish this draft after verifying the binary. OTA manifest remains unchanged until the binary is available." \
+              --draft
+          fi
