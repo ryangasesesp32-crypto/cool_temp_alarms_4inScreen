@@ -1,19 +1,31 @@
 # Freenove Cooling Alarm — 4-inch Native LVGL
 
-## v1.37 — Approved screen changes (source and TXT ready)
+## v1.38 — Global button-label font limit (source ready)
 
-The latest Arduino source is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino), with an identical downloadable [CoolingAlarm_Freenove_v1_37.txt](./CoolingAlarm_Freenove_v1_37.txt). Target: Freenove FNK0114S 480 × 320 landscape, LVGL 8.4.0.
+The current development sketch is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino) and its identical downloadable plain-text copy is [CoolingAlarm_Freenove_v1_38.txt](./CoolingAlarm_Freenove_v1_38.txt). Target: Freenove FNK0114S 480 × 320 landscape, LVGL 8.4.0.
 
-- **All button labels:** centered horizontally and vertically. **20px bold is the maximum**; automatically fall back to the available 18px regular font where needed, and show `...` if the caption still will not fit. Applies to HOME, Settings, Advanced Settings, selection and editing screens, and confirmation buttons. Non-button text (including HOME information and status header) keeps its existing sizing.
-- Keep PREV and NEXT adjacent throughout the navigation. Unavailable directions remain grey and disabled.
-- **Advanced Settings:** show live `Device Mode: Test` or `Device Mode: Production` right-justified on the title line.
-- **View Roster:** 3 columns × 3 rows, nine cooks per page, first names only, alphabetically sorted, larger spaces, and HOME | PREV | NEXT navigation.
-- **View Recipes:** copy Create Alarm's recipe-selection styling: black background, purple cards with teal borders in a 2 × 3 grid, automatic two-line fit, and Page | BACK | PREV | NEXT.
-- **Recipe Information:** compact 63px recipe panel with centered smart-fit label, venue and type below, and a 63px full-width BACK button.
-- **Edit Alarm:** equal-width first-name / time / c1-c2 top controls; time shown with AM/PM and smart 24px bold font; smart-fit recipe text; full PENDING/DONE/CANCELLED labels.
-- Unchanged: alarm scheduling, Google Sheets behavior, existing HOME layout, Alarm Due acknowledgements/chirps/LEDs, confirmation rules, and physical button behavior.
+- **Every button label** now has a **20px bold maximum**, with centered horizontal/vertical alignment and smart fitting.
+- Long captions automatically step down to the available **18px regular** font (project minimum) and use `...` on overflow. One- and two-line buttons retain their permitted line counts.
+- One shared caption helper is used for HOME, Settings, Advanced Settings, roster/recipe buttons, editing, confirmation, and other native navigation buttons.
+- This cap supersedes the previously approved 24px Edit Alarm time-button font; non-button text (including header, recipe information, and alarm details) retains its current sizes.
+- No changes to alarm timing, Sheet APIs, OTA logic, screen touch targets, acknowledgement, or physical buttons.
 
-**Testing and release status:** source-level checks and screen touchbox geometry checks passed. Arduino compilation and on-device validation of v1.37 have **not** yet been independently verified here. A **draft** `freenove-v1.37` release exists without a compiled binary. At the user's request, [`firmware.json`](./firmware.json) already advertises **v1.37** and the future `Sketch_13.1_LVGL.ino.bin` asset URL. **CAUTION:** OTA checks may detect v1.37 now, but the download will fail until the matching binary has been uploaded to the draft release and the release published. Compile, attach, verify, then publish as the next manual step.
+**Release/OTA status:** v1.37 was already **published** with a compiled binary on November 12, 2026, **before** this 20px typography change. v1.38 is therefore a separate next build so devices already running v1.37 can detect it later. v1.38 compilation and hardware behavior are not yet verified. The OTA [firmware.json](./firmware.json) still points to the published v1.37 release until a corresponding v1.38 .bin is built, attached and published.
+
+## v1.37 — Published approved screen changes
+
+A snapshot of the v1.37 source is [CoolingAlarm_Freenove_v1_37.txt](./CoolingAlarm_Freenove_v1_37.txt). The [published v1.37 release](https://github.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/releases/tag/freenove-v1.37) includes the existing compiled binary. The latest `.ino` on main is now v1.38.
+
+- Center button labels; smart-fit text and a minimum 18px font.
+- PREV and NEXT adjacent, grey and untappable when navigation is unavailable.
+- **Advanced Settings:** live `Device Mode: Test` / `Device Mode: Production` display.
+- **View Roster:** 3 columns × 3 rows, nine cooks per page, first names only, alphabetical order and enlarged gaps.
+- **View Recipes:** black background, six purple cards with teal borders, Page | BACK | PREV | NEXT.
+- **Recipe Information:** compact recipe panel, left-aligned venue/type, and full-width BACK.
+- **Edit Alarm:** equal-width first name / time / c1-c2 controls; AM/PM time (previously up to 24px bold), smart-fit recipe and full PENDING/DONE/CANCELLED labels.
+- Alarm timing, Google Sheets, HOME structure, Alarm Due sound/LED/acknowledgement, and confirmation behavior unchanged.
+
+**Verification:** the published v1.37 binary existed before v1.38 was started. It has not been independently tested on hardware here. Do not confuse the published v1.37 binary with the newer v1.38 source.
 
 ## v1.36 — Approved screen updates (source staged for testing)
 
