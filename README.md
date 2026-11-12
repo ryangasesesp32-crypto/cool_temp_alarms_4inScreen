@@ -1,5 +1,24 @@
 # Freenove Cooling Alarm — 4-inch Native LVGL
 
+## v1.41 — Code-review fixes (compiled)
+
+v1.41 is the first build in this repository compiled outside the Arduino IDE: `arduino-cli`, ESP32 core 3.3.12 (ESP-IDF v5.5.5), **ESP32 Dev Module**, **Minimal SPIFFS (1.9MB APP with OTA)**, Freenove's FNK0114S `TFT_eSPI`/`TFT_eSPI_Setups`/`lvgl` 8.4.0 libraries and `display.h`/`display.cpp` from Freenove `Sketch_13.1_LVGL`, ArduinoJson 7.4.3. The binary is 1,658,336 bytes (84% of the OTA slot) and has the same flash header (4MB, DIO, 80MHz) as the published v1.39 binary. **It has not been tested on hardware.**
+
+It keeps the v1.40 solid red Alarm Due border and changes only the following:
+
+- **Alarms created without a verified clock never fired.** They were saved with no due time and stayed silent even after a later synced boot. CREATE is now refused with `CLOCK NOT VERIFIED` until the device has booted with NTP time.
+- **Device stayed dark after a boot without Wi-Fi/NTP.** A saved closed-hours state could never clear because the store schedule needs verified time. The screen now opens for that session; the saved closed state is kept for the next verified boot.
+- **Wrong CREATE error.** A full alarm list (40) showed `SAVE FAILED - RETRY`. It now shows `ALARM LIST FULL`; a real storage failure still shows `SAVE FAILED - RETRY`.
+- **Recipe names longer than 31 characters** were not preselected when editing an alarm's recipe (the saved alarm keeps 31 characters). The match now compares the stored length.
+- **Sheet data download:** running out of memory while parsing is reported as `OUT_OF_MEMORY` instead of `INVALID_JSON`.
+- **SELECT button:** 30 ms debounce so contact bounce cannot count as a second press.
+- **Clear All Alarms failure** is logged to Serial (the old startup-log message could not appear after boot).
+- **Build fix:** `cool_mono_bold_12` now guards `.user_data` with `LV_USE_USER_DATA` like the other fonts. The boot banner prints the real firmware version.
+
+Not changed (reviewed, left as is): OTA and Sheets HTTPS still use `setInsecure()` (no certificate check); the Sheets token is still sent in the URL; venues/types are still a fixed list; Config replies over about 4,000 bytes are applied but cannot be backed up to NVS. The buzzer on GPIO18 does not conflict with the display: Freenove's FNK0114S setup uses HSPI on GPIO 12/13/14/15.
+
+- [Arduino source](./Sketch_13.1_LVGL.ino) and identical [v1.41 text snapshot](./CoolingAlarm_Freenove_v1_41.txt).
+
 ## v1.40 — Solid red Alarm Due border diagnostic (source only)
 
 This **test build** isolates whether fast LVGL border redraws contribute to the visible screen wave and slower-sounding chirps on the Freenove FNK0114S.

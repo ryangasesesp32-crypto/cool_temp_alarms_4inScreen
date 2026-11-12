@@ -1,4 +1,6 @@
-// Freenove v1.40 diagnostic: solid red Alarm Due border; buzzer and LEDs retain Sheets-configured cadence.
+// Freenove v1.41: code-review fixes (see README). First build compiled with arduino-cli
+// (ESP32 core 3.3.12, LVGL 8.4.0, Freenove TFT_eSPI setup); not yet validated on hardware.
+// Retains the v1.40 solid red Alarm Due border; buzzer and LEDs retain Sheets-configured cadence.
 // LVGL border is drawn once on entry, not on individual chirps. No timing changes made.
 // FREENOVE v1.32 — Phase 1: inactive Adafruit GFX/4-bit drawing code removed.
 // Original native LVGL, touch hitbox routing, Google Sheets, OTA, alarms,
@@ -9437,7 +9439,9 @@ static const lv_font_t cool_mono_bold_12 = {
   .underline_thickness=1,
   .dsc=&cool_mono_bold_12_dsc,
   .fallback=&cool_mono_regular_18,
+#if LV_USE_USER_DATA
   .user_data=NULL
+#endif
 };
 
 // CHANGE #2: mirror the EXISTING Serial Monitor output to the startup LCD.
@@ -9482,8 +9486,8 @@ static StartupSerialMirror startupSerial(Serial);
 // PUBLIC OTA-SAFE build. Wi-Fi credentials and Apps Script token remain in
 // device Preferences (NVS), provisioned by the earlier v1.14 USB build.
 // Do not embed or publish private credentials in this source or binary.
-static const char* FIRMWARE_VERSION = "v1.40"; // Freenove-only OTA version; original alarm logic remains v1.31
-static const char* FREENOVE_BUILD_ID = "LVGL-F4-SolidDueBorder-Test-v1.40";
+static const char* FIRMWARE_VERSION = "v1.41"; // Freenove-only OTA version; original alarm logic remains v1.31
+static const char* FREENOVE_BUILD_ID = "LVGL-F4-ReviewFixes-v1.41";
 static const char* GITHUB_OTA_MANIFEST_URL = "https://raw.githubusercontent.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/main/firmware.json";
 // SAFETY: do not point this board at the ELEGOO production manifest.
 // The Freenove manifest may point to a staged draft release; OTA download will
@@ -10319,7 +10323,7 @@ void openChooseRecipe(bool editing) {
   recipeForEdit=editing;
   chosenVenue=-1;chosenType=-1;chosenRecipe=-1;
   if(editing) {
-    for(int i=0;i<RECIPE_COUNT;i++)if(strcmp(draft.recipe,recipes[i].name)==0) {
+    for(int i=0;i<RECIPE_COUNT;i++)if(strncmp(draft.recipe,recipes[i].name,sizeof(draft.recipe)-1)==0) { // Alarm.recipe is truncated to 31 chars
       chosenRecipe=i;chosenVenue=recipes[i].venue;chosenType=recipes[i].type;break;
     }
   } else if(selectedRecipe>=0 && selectedRecipe<RECIPE_COUNT) {
@@ -10619,14 +10623,17 @@ void yesConfirmation() {
   } else if(action==CA_CLEAR_ALL_ALARMS) {
     if(clearAllSavedAlarms())goHome();
     else {
+      // v1.41: the startup log screen is no longer active here, so
+      // startupMessage() would show nothing. Stay on the confirmation
+      // screen (alarms are still listed) and report on Serial.
       goBack();
-      startupMessage("CLEAR FAILED","Storage error","Do not power off");
+      Serial.println("CLEAR FAILED: storage error; saved alarms were not cleared");
     }
   } else if(action==CA_START_CALIBRATION) {
     startCalibration(true);
   } else if(action==CA_CREATE) {
-    if(selectedCook<0 || selectedRecipe<0 || !allowNewCoolingPair()) {
-      Serial.println("CREATE blocked: cook and recipe required");
+    if(selectedCook<0 || selectedRecipe<0 || !allowNewCoolingPair() || !timeSynced) {
+      Serial.println("CREATE blocked: cook, recipe and verified clock required");
       goBack();
       return;
     }
@@ -10673,11 +10680,26 @@ void yesConfirmation() {
 // The same NVS snapshot format and existing addPair() logic are retained.
 // On a failed NVS write, undo just this new pair in RAM and show an error.
 static bool createSaveError=false;
+static const char *createErrorText="SAVE FAILED - RETRY";
 static bool createPairImmediately() {
+  createErrorText="SAVE FAILED - RETRY";
+  if(!timeSynced) {
+    // v1.41: an alarm created without a verified clock gets dueEpoch=0 and
+    // would never fire. Refuse it visibly instead of saving a silent alarm.
+    createErrorText="CLOCK NOT VERIFIED";
+    Serial.println("CREATE blocked: clock not verified; alarm could never become due");
+    return false;
+  }
+  if(alarmCount>MAX_ALARMS-2) {
+    createErrorText="ALARM LIST FULL";
+    Serial.println("CREATE blocked: alarm list is full");
+    return false;
+  }
   if(selectedCook<0 || selectedCook>=COOK_COUNT ||
      selectedRecipe<0 || selectedRecipe>=RECIPE_COUNT ||
-     !allowNewCoolingPair() || !createTimesValid() || alarmCount>MAX_ALARMS-2) {
-    Serial.println("CREATE blocked: invalid cook, recipe, hours, or full alarm list");
+     !allowNewCoolingPair() || !createTimesValid()) {
+    createErrorText="CHECK SELECTIONS";
+    Serial.println("CREATE blocked: invalid cook, recipe or hours");
     return false;
   }
   const int previousCount=alarmCount;
@@ -11604,7 +11626,9 @@ bool parseSheetDataset(const String& payload,bool apply) {
   sheetValidationError="";
   if(payload.length()==0 || payload.length()>30000)return sheetValidationReject("EMPTY_OR_OVERSIZE_RESPONSE");
   DynamicJsonDocument doc(50000);
-  if(deserializeJson(doc,payload))return sheetValidationReject("INVALID_JSON");
+  const DeserializationError jsonError=deserializeJson(doc,payload);
+  if(jsonError==DeserializationError::NoMemory)return sheetValidationReject("OUT_OF_MEMORY");
+  if(jsonError)return sheetValidationReject("INVALID_JSON");
   // Accept older v1.12 local caches while new endpoint uses Break Log success=true.
   if(!(doc["success"] | false) && !(doc["ok"] | false))return sheetValidationReject("APP_RESPONSE_NOT_SUCCESS");
   JsonObjectConst conf=doc["config"].as<JsonObjectConst>();
@@ -13164,7 +13188,7 @@ static void nativeRender(){
       uiLargeButton(CREATE_RECIPE,selectedRecipe>=0?String(recipes[selectedRecipe].name):"RECIPE",UI_DARK_BLUE,TEAL,true,2);
       uiLargeButton(CREATE_C1,String("c1 ")+homeAlarmTime(createC1Min),UI_PURPLE,TEAL,true,1);
       uiLargeButton(CREATE_C2,String("c2 ")+homeAlarmTime(createC2Min),UI_PURPLE,TEAL,true,1);
-      if(createSaveError)ntext("SAVE FAILED - RETRY",{8,176,304,17},RED,true);
+      if(createSaveError)ntext(createErrorText,{8,176,304,17},RED,true);
       else if(!createTimesValid())ntext("CHECK ALARM ORDER",{8,176,304,17},YELLOW,true);
       else if(!allowNewCoolingPair())ntext("PAST 10:15 PM",{8,176,304,17},YELLOW,true);
       uiLargeButton(CREATE_CANCEL,"CANCEL",DARK_RED,RED,true,1);
@@ -13362,7 +13386,7 @@ void setup() {
   if(!bootLogInitBuffers())
     Serial.println("[STARTUP LOG] Not enough heap for display mirror; Serial Monitor remains operational");
   delay(150);
-  Serial.println("Cooling Alarm v1.31 - Freenove LVGL Alpha 1.8 FS + boot diagnostics");
+  Serial.printf("Cooling Alarm %s (%s) - Freenove LVGL\n",FIRMWARE_VERSION,FREENOVE_BUILD_ID);
   Serial.printf("[BOOT-RESET] esp_reset_reason=%d (1=power-on, 3=software, 4=panic, 6=task WDT, 9=brownout)\n",(int)esp_reset_reason());
   diagBootStage("SETUP START");
   bootMs=millis();
@@ -13499,6 +13523,16 @@ void setup() {
   bootLogScreenStop();
   serviceStoreSchedule();
   diagBootStage("AFTER FIRST STORE SCHEDULE CHECK");
+  if(storeClosedMode && !timeSynced) {
+    // v1.41: without a verified clock the store schedule can never run, so
+    // a saved closed state would leave the device dark and unusable until
+    // a later boot with Wi-Fi. Open the UI for this session only; the saved
+    // closed_mode flag is kept so the next verified boot follows the schedule.
+    storeClosedMode=false;
+    stopClosedHeartbeat();
+    digitalWrite(FREENOVE_BACKLIGHT_PIN,HIGH);
+    Serial.println("Closed state ignored for this boot: clock not verified; LCD ON");
+  }
   if(storeClosedMode) {
     // In closed mode, don't render or allow UI interaction.
     enterClosedDisplayMode();
@@ -13534,7 +13568,13 @@ void loop() {
   if(ENABLE_SELECT_BUTTON) {
     static bool wasPressed=false,handledHold=false;
     static uint32_t pressedAt=0;
-    bool pressed=digitalRead(SELECT_PIN)==LOW;
+    // v1.41: 30 ms debounce so contact bounce cannot act as a second press.
+    static bool rawPrevious=false;
+    static uint32_t rawChangedAt=0;
+    const bool rawPressed=digitalRead(SELECT_PIN)==LOW;
+    if(rawPressed!=rawPrevious){rawPrevious=rawPressed;rawChangedAt=millis();}
+    bool pressed=wasPressed;
+    if((uint32_t)(millis()-rawChangedAt)>=30)pressed=rawPressed;
     if(pressed && !wasPressed) {
       pressedAt=millis();handledHold=false;lastActivity=millis();
       if(screen==ALARM_DUE){ackDue();acknowledgeButton();handledHold=true;}
