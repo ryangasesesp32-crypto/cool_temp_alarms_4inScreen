@@ -1,0 +1,29 @@
+name: Create Freenove v1.36 test release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-v1-36-draft-release.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  create-test-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stage v1.36 test release without activating OTA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "freenove-v1.36" >/dev/null 2>&1; then
+            echo "Existing v1.36 release retained"
+          else
+            gh release create "freenove-v1.36" \
+              --target main \
+              --title "Freenove Cooling Alarm v1.36 — Screen Review Test" \
+              --notes "v1.36 source committed: six-card View Alarms paging, Alarm Details navigation, HOME-style confirmation labels, Settings and Advanced grid colors, Cooling and Cooking guides. This is a draft release with no compiled binary. Compile and test Sketch_13.1_LVGL.ino before attaching a matching .bin; firmware.json stays on v1.35 until an OTA-ready binary is verified." \
+              --draft
+          fi
