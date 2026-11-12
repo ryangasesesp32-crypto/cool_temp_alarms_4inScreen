@@ -9480,8 +9480,8 @@ static StartupSerialMirror startupSerial(Serial);
 // PUBLIC OTA-SAFE build. Wi-Fi credentials and Apps Script token remain in
 // device Preferences (NVS), provisioned by the earlier v1.14 USB build.
 // Do not embed or publish private credentials in this source or binary.
-static const char* FIRMWARE_VERSION = "v1.38"; // Freenove-only OTA version; original alarm logic remains v1.31
-static const char* FREENOVE_BUILD_ID = "LVGL-F4-ApprovedScreens-v1.38";
+static const char* FIRMWARE_VERSION = "v1.39"; // Freenove-only OTA version; original alarm logic remains v1.31
+static const char* FREENOVE_BUILD_ID = "LVGL-F4-ConfigBuzzer-v1.39";
 static const char* GITHUB_OTA_MANIFEST_URL = "https://raw.githubusercontent.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/main/firmware.json";
 // SAFETY: do not point this board at the ELEGOO production manifest.
 // The Freenove manifest may point to a staged draft release; OTA download will
@@ -9548,10 +9548,18 @@ static_assert(EXT_LED_PIN != EXT_BUZZER_PIN &&
 
 static constexpr int SW = 320, SH = 240;
 // Runtime inactivity is loaded from local Config when present.
-static constexpr uint32_t ALARM_CHIRP_ON_MS = 60;
-static constexpr uint32_t ALARM_CHIRP_OFF_MS = 30;
-static constexpr uint32_t ALARM_CHIRP_REST_MS = 2000;
-static constexpr uint8_t ALARM_CHIRPS_PER_CYCLE = 5; // five chirps, then a 2-second pause
+// Alarm Due cadence is loaded from action=config at each boot.
+static constexpr uint32_t DEFAULT_ALARM_CHIRP_ON_MS = 60;
+static constexpr uint32_t DEFAULT_ALARM_CHIRP_OFF_MS = 30;
+static constexpr uint32_t DEFAULT_ALARM_CHIRP_REST_MS = 2000;
+static uint32_t alarmChirpOnMs=DEFAULT_ALARM_CHIRP_ON_MS;
+static uint32_t alarmChirpOffMs=DEFAULT_ALARM_CHIRP_OFF_MS;
+static uint32_t alarmChirpRestMs=DEFAULT_ALARM_CHIRP_REST_MS;
+static constexpr uint8_t ALARM_CHIRPS_PER_CYCLE = 5;
+static constexpr uint32_t MIN_ALARM_CHIRP_ON_MS=10, MAX_ALARM_CHIRP_ON_MS=1000;
+static constexpr uint32_t MIN_ALARM_CHIRP_OFF_MS=10, MAX_ALARM_CHIRP_OFF_MS=5000;
+static constexpr uint32_t MIN_ALARM_CHIRP_REST_MS=100, MAX_ALARM_CHIRP_REST_MS=120000;
+// Button acknowledgement remains a separate constant: BUTTON_ACK_MS.
 static constexpr uint32_t STORE_CHECK_INTERVAL_MS = 60000;
 static constexpr uint32_t CLOSED_LED_PERIOD_MS = 10000;
 static constexpr uint32_t CLOSED_LED_FLASH_MS = 10;
@@ -10162,7 +10170,7 @@ Screen navStack[12];
 int navDepth=0;
 ConfirmAction confirmAction=CA_NONE;
 uint32_t lastActivity=0, lastBlink=0, lastClockDraw=0;
-uint8_t alarmChirpIndex=0; // 0..4; 60ms ON each, 30ms gaps, 2000ms after chirp 5
+uint8_t alarmChirpIndex=0; // 0..4; non-blocking cadence from current Config
 bool alertOn=false;
 int alarmFirst=0, alarmAnchor=0, alarmPageOffset=0;
 int cookingGuidePage=0;
@@ -11881,6 +11889,38 @@ static bool validateTimezoneName(const String &value) {
   }
   return true;
 }
+// Accept millisecond values as JSON integers or digit-only text.
+// Google Apps Script may use camelCase keys or exact Sheet labels.
+static bool configAlarmMilliseconds(JsonObjectConst config,const char* jsonKey,
+                                    const char* sheetLabel,uint32_t minMs,
+                                    uint32_t maxMs,uint32_t& resultMs) {
+  JsonVariantConst v=config[jsonKey];
+  if(v.isNull())v=config[sheetLabel];
+  if(v.isNull())return false;
+  String digits=v.as<String>();
+  digits.trim();
+  if(digits.isEmpty() || digits.length()>6)return false;
+  for(size_t i=0;i<digits.length();i++)
+    if(digits[i]<'0' || digits[i]>'9')return false;
+  const uint32_t ms=(uint32_t)digits.toInt();
+  if(ms<minMs || ms>maxMs)return false;
+  resultMs=ms;
+  return true;
+}
+// Retain the last valid settings when the network or Apps Script is unavailable.
+static void loadSavedAlarmTiming() {
+  const uint32_t chirp=prefs.getUInt("alarm_on",DEFAULT_ALARM_CHIRP_ON_MS);
+  const uint32_t gap=prefs.getUInt("alarm_gap",DEFAULT_ALARM_CHIRP_OFF_MS);
+  const uint32_t loop=prefs.getUInt("alarm_rest",DEFAULT_ALARM_CHIRP_REST_MS);
+  if(chirp>=MIN_ALARM_CHIRP_ON_MS && chirp<=MAX_ALARM_CHIRP_ON_MS &&
+     gap>=MIN_ALARM_CHIRP_OFF_MS && gap<=MAX_ALARM_CHIRP_OFF_MS &&
+     loop>=MIN_ALARM_CHIRP_REST_MS && loop<=MAX_ALARM_CHIRP_REST_MS) {
+    alarmChirpOnMs=chirp;alarmChirpOffMs=gap;alarmChirpRestMs=loop;
+  }
+  Serial.printf("Saved alarm cadence: chirp=%lu gap=%lu loop=%lu ms\n",
+                (unsigned long)alarmChirpOnMs,(unsigned long)alarmChirpOffMs,
+                (unsigned long)alarmChirpRestMs);
+}
 bool applyRuntimeConfigPayload(const String &payload,bool persist) {
   DynamicJsonDocument doc(6000);
   if(payload.length()==0 || payload.length()>5500 || deserializeJson(doc,payload)) {
@@ -11907,6 +11947,20 @@ bool applyRuntimeConfigPayload(const String &payload,bool persist) {
     startupLogAdd("CONFIG rejected: invalid hours, timeout, mode or timezone");
     return false;
   }
+  // Fetch remains independent of UpdateDataNow; apply this set only if ALL
+  // three values are valid. Missing Apps Script fields keep saved timings.
+  uint32_t nextChirp=alarmChirpOnMs;
+  uint32_t nextGap=alarmChirpOffMs;
+  uint32_t nextLoop=alarmChirpRestMs;
+  const bool buzzerTimingValid=
+    configAlarmMilliseconds(c,"chirp","Chirp",
+      MIN_ALARM_CHIRP_ON_MS,MAX_ALARM_CHIRP_ON_MS,nextChirp) &&
+    configAlarmMilliseconds(c,"pauseBetweenChirp","PauseBetweenChirp",
+      MIN_ALARM_CHIRP_OFF_MS,MAX_ALARM_CHIRP_OFF_MS,nextGap) &&
+    configAlarmMilliseconds(c,"pauseBetweenLoop","PauseBetweenLoop",
+      MIN_ALARM_CHIRP_REST_MS,MAX_ALARM_CHIRP_REST_MS,nextLoop);
+  if(!buzzerTimingValid && persist)
+    startupLogAdd("CONFIG buzzer values missing or invalid; using saved cadence");
   if(persist) {
     // Flash is written only if a value changed. Last good Config remains
     // available when the network is down on the next boot.
@@ -11915,6 +11969,24 @@ bool applyRuntimeConfigPayload(const String &payload,bool persist) {
       startupLogAdd("WARNING: Config NVS backup write failed");
     if(prefs.getString("cfg_tz",TZ_INFO)!=timezone)
       prefs.putString("cfg_tz",timezone);
+  }
+  if(buzzerTimingValid) {
+    // Preserve a separate last-good backup in NVS; avoid flash writes
+    // when the configured timings are unchanged.
+    if(persist) {
+      if(prefs.getUInt("alarm_on",DEFAULT_ALARM_CHIRP_ON_MS)!=nextChirp &&
+         prefs.putUInt("alarm_on",nextChirp)!=sizeof(uint32_t))
+        startupLogAdd("WARNING: alarm_on NVS save failed");
+      if(prefs.getUInt("alarm_gap",DEFAULT_ALARM_CHIRP_OFF_MS)!=nextGap &&
+         prefs.putUInt("alarm_gap",nextGap)!=sizeof(uint32_t))
+        startupLogAdd("WARNING: alarm_gap NVS save failed");
+      if(prefs.getUInt("alarm_rest",DEFAULT_ALARM_CHIRP_REST_MS)!=nextLoop &&
+         prefs.putUInt("alarm_rest",nextLoop)!=sizeof(uint32_t))
+        startupLogAdd("WARNING: alarm_rest NVS save failed");
+    }
+    alarmChirpOnMs=nextChirp;
+    alarmChirpOffMs=nextGap;
+    alarmChirpRestMs=nextLoop;
   }
   const bool newTestMode=(mode=="TEST");
   if(deviceTestMode!=newTestMode) prefs.putBool("dev_test",newTestMode);
@@ -11936,6 +12008,10 @@ bool applyRuntimeConfigPayload(const String &payload,bool persist) {
   }
   startupLogAdd("Config: mode="+mode+" open="+open+" close="+close+
                 " inactivity="+String(inactivity)+"s TZ="+timezone);
+  startupLogAdd("Alarm cadence: chirp="+String(alarmChirpOnMs)+
+                "ms gap="+String(alarmChirpOffMs)+
+                "ms loop="+String(alarmChirpRestMs)+"ms "+
+                (buzzerTimingValid?"CONFIG":"SAVED/DEFAULT"));
   Serial.printf("Config active: %s | %s-%s | idle=%ds | TZ=%s\n",
        mode.c_str(),open.c_str(),close.c_str(),inactivity,timezone.c_str());
   return true;
@@ -13303,6 +13379,7 @@ void setup() {
   }
   diagBootStage("AFTER MEMORY ALLOCATION");
   prefs.begin("cooltest",false);
+  loadSavedAlarmTiming(); // Restore valid buzzer settings before Wi-Fi / Config.
   deviceTestMode=prefs.getBool("dev_test",false);
   configuredTimezone=prefs.getString("cfg_tz",TZ_INFO);
   if(configuredTimezone.length()==0)configuredTimezone=TZ_INFO;
@@ -13542,13 +13619,12 @@ void loop() {
     goBack();
   }
   if(screen==ALARM_DUE) {
-    // Five 60ms chirps with four 30ms gaps, then 2 seconds of silence.
-    // alarmChirpIndex identifies the just-started chirp (0..4).
-    // During OFF: 30ms between chirps, 2000ms after the fifth chirp.
-    // Border, both red LEDs and buzzer follow the same setAlert() signal.
-    const uint32_t phaseMs=alertOn ? ALARM_CHIRP_ON_MS :
+    // Five non-blocking chirps; durations come from startup Config.
+    // OFF means the short gap, or the longer rest after the fifth chirp.
+    // Border, red LED and buzzer follow the same setAlert() signal.
+    const uint32_t phaseMs=alertOn ? alarmChirpOnMs :
       (alarmChirpIndex==ALARM_CHIRPS_PER_CYCLE-1 ?
-       ALARM_CHIRP_REST_MS : ALARM_CHIRP_OFF_MS);
+       alarmChirpRestMs : alarmChirpOffMs);
     if((uint32_t)(millis()-lastBlink)>=phaseMs) {
       lastBlink=millis();
       if(alertOn) setAlert(false);
