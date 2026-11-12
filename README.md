@@ -13,7 +13,7 @@ The latest Arduino source is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino), wit
 - **Edit Alarm:** equal-width first-name / time / c1-c2 top controls; time shown with AM/PM and smart 24px bold font; smart-fit recipe text; full PENDING/DONE/CANCELLED labels.
 - Unchanged: alarm scheduling, Google Sheets behavior, existing HOME layout, Alarm Due acknowledgements/chirps/LEDs, confirmation rules, and physical button behavior.
 
-**Testing status:** source-level checks and screen touchbox geometry checks passed. Arduino compilation and on-device validation of v1.37 have **not** yet been performed here. The OTA manifest deliberately remains at **v1.36**, which has a published release asset, until a matching v1.37 firmware binary is built and tested. Do not change the OTA manifest to v1.37 before creating and verifying its .bin file.
+**Testing and release status:** source-level checks and screen touchbox geometry checks passed. Arduino compilation and on-device validation of v1.37 have **not** yet been independently verified here. A **draft** `freenove-v1.37` release exists without a compiled binary. At the user's request, [`firmware.json`](./firmware.json) already advertises **v1.37** and the future `Sketch_13.1_LVGL.ino.bin` asset URL. **CAUTION:** OTA checks may detect v1.37 now, but the download will fail until the matching binary has been uploaded to the draft release and the release published. Compile, attach, verify, then publish as the next manual step.
 
 ## v1.36 — Approved screen updates (source staged for testing)
 
