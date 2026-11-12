@@ -9480,8 +9480,8 @@ static StartupSerialMirror startupSerial(Serial);
 // PUBLIC OTA-SAFE build. Wi-Fi credentials and Apps Script token remain in
 // device Preferences (NVS), provisioned by the earlier v1.14 USB build.
 // Do not embed or publish private credentials in this source or binary.
-static const char* FIRMWARE_VERSION = "v1.35"; // Freenove-only OTA version; original alarm logic remains v1.31
-static const char* FREENOVE_BUILD_ID = "LVGL-F4-SmartNav-Min18-NoKeyboard-v1.35";
+static const char* FIRMWARE_VERSION = "v1.36"; // Freenove-only OTA version; original alarm logic remains v1.31
+static const char* FREENOVE_BUILD_ID = "LVGL-F4-ScreenReview-Min18-v1.36";
 static const char* GITHUB_OTA_MANIFEST_URL = "https://raw.githubusercontent.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/main/firmware.json";
 // SAFETY: do not point this board at the ELEGOO production manifest.
 // Only set a FREENOVE-specific manifest after its release binary exists.
@@ -9579,6 +9579,8 @@ static constexpr uint16_t GREEN  = 0x1407;
 static constexpr uint16_t BLUE   = 0x231D;
 static constexpr uint16_t YELLOW = 0xED81;
 static constexpr uint16_t BLACK  = 0x0000;
+static constexpr uint16_t SETTINGS_TEAL = 0x1471;
+static constexpr uint16_t SETTINGS_ORANGE = 0xDC04;
 
 // Freenove original display.cpp already defines the single TFT_eSPI object.
 extern TFT_eSPI tft;
@@ -9767,31 +9769,34 @@ static const Rect SETTINGS_BLANK_LEFT = {8, 148, 149, 40};
 static const Rect SETTINGS_BLANK_RIGHT = {163, 148, 149, 40};
 static const Rect SETTINGS_HOME = {8, 196, 149, 40};
 static const Rect SETTINGS_ADVANCED = {163, 196, 149, 40};
-// Advanced Settings retains its existing 2x3 layout (NOT SETTINGS grid).
-static const Rect ADV_RESTART = {8, 52, 149, 45};
-static const Rect ADV_CLEAR = {163, 52, 149, 45};
-static const Rect ADV_CALIBRATE = {8, 105, 149, 45};
-static const Rect ADV_BLANK1 = {163, 105, 149, 45};
-static const Rect ADV_BLANK2 = {8, 158, 149, 45};
-static const Rect ADV_BLANK3 = {163, 158, 149, 45};
+// Advanced Settings uses the same 2-column x 4-row grid as Settings.
+static const Rect ADV_RESTART = {8, 52, 149, 40};
+static const Rect ADV_CLEAR = {163, 52, 149, 40};
+static const Rect ADV_CALIBRATE = {8, 100, 149, 40};
+static const Rect ADV_BLANK1 = {163, 100, 149, 40};
+static const Rect ADV_BLANK2 = {8, 148, 149, 40};
+static const Rect ADV_BLANK3 = {163, 148, 149, 40};
+static const Rect ADV_BACK = {8, 196, 149, 40};
+static const Rect ADV_HOME = {163, 196, 149, 40};
 static const Rect VERIFY_RETRY = {8, 183, 148, 48};
 static const Rect VERIFY_SAVE = {164, 183, 148, 48};
 static const Rect VERIFY_TARGET = {139, 107, 42, 42};
 static const Rect NAV_PREV = {6, 208, 97, 29};
 static const Rect NAV_HOME = {111, 208, 98, 29};
 static const Rect NAV_NEXT = {217, 208, 97, 29};
-// Expanded View Alarms navigation takes the old action-button row.
-static const Rect LIST_NAV_PREV = {6, 181, 97, 55};
-static const Rect LIST_NAV_HOME = {111, 181, 98, 55};
-static const Rect LIST_NAV_NEXT = {217, 181, 97, 55};
+// Six alarms per page: 3 rows x 2 columns. Navigation: PAGE/HOME/PREV/NEXT.
+static constexpr int ALARMS_PER_PAGE=6;
+static const Rect LIST_NAV_PAGE = {6, 181, 74, 55};
+static const Rect LIST_NAV_HOME = {83, 181, 74, 55};
+static const Rect LIST_NAV_PREV = {160, 181, 74, 55};
+static const Rect LIST_NAV_NEXT = {237, 181, 77, 55};
 static const Rect DETAIL_STATUS = {8, 130, 304, 48};
-static const Rect DETAIL_EDIT = {8, 185, 148, 50};
-static const Rect DETAIL_BACK = {164, 185, 148, 50};
-static const Rect GUIDE_PREV = {8, 202, 92, 34};
-static const Rect GUIDE_BACK = {112, 202, 96, 34};
+static const Rect DETAIL_BACK = {8, 185, 148, 50};
+static const Rect DETAIL_EDIT = {164, 185, 148, 50};
+static const Rect GUIDE_BACK = {8, 202, 92, 34};
+static const Rect GUIDE_PREV = {112, 202, 96, 34};
 static const Rect GUIDE_NEXT = {220, 202, 92, 34};
-// Cards occupy y=46..76,79..109,112..142,145..175.
-static Rect alarmCardAt(int row) { return {9, 46+row*33, 302, 31}; }
+static Rect alarmCardAt(int slot){return {8+(slot%2)*155,34+(slot/2)*49,149,44};}
 static constexpr int ROSTER_PER_PAGE = 6;
 
 static constexpr int RECIPE_REFERENCE_PER_PAGE = 6;
@@ -9861,17 +9866,19 @@ static int RECIPE_COUNT = 0;
 // Kept from the working v1.31.10 firmware (not a raster renderer).
 static int recipeOrder[MAX_RECIPES];
 
-// Shared temperature-reference table used by native LVGL Cooking Guide.
+// tblCookInfo v1.36 display-test reference. Current Apps Script data response
+// contains only config/cooks/recipes; these categories are not yet live-synced.
 struct CookingGuideEntry {const char *label; uint8_t degC;};
 static const CookingGuideEntry COOKING_GUIDE[] = {
-  {"Whole chicken",82}, {"Beef: Well done",77},
-  {"Chicken pieces",74}, {"Ground poultry",74},
-  {"Shellfish",74}, {"Egg dishes",74},
-  {"Reheat leftovers",74}, {"Pork (cuts)",71},
-  {"Ground beef/pork",71}, {"Beef: Medium",71},
-  {"Fish",70}, {"Beef: Med-rare",63}
+  {"Whole Poultry and Stuffed Items",83},
+  {"Ground Meat Items (including Poultry), Shellfish, Pieces of Poultry & Eggs",74},
+  {"Pork",71},
+  {"Fish",70},
+  {"Whole muscle meat (including Roast Beef), (excluding Poultry), fish, and cook-to-order eggs.",63},
+  {"Plants (fruits, vegetables, and grains)",60}
 };
 static constexpr int COOKING_GUIDE_ITEMS=sizeof(COOKING_GUIDE)/sizeof(COOKING_GUIDE[0]);
+static constexpr int COOKING_GUIDE_PER_PAGE=3;
 // Validate the complete JSON dataset before changing the live arrays.
 // No second 10KB static copy: only ~240B of stack space for duplicate initials.
 
@@ -10504,7 +10511,7 @@ void goViewAlarms() {
   alarmAnchor=0;alarmPageOffset=0;
   const int next=nextPending();
   if(next>=0)for(int i=0;i<visibleAlarmCount;i++)if(sorted[i]==next) {
-    alarmAnchor=(i/4)*4;break;
+    alarmAnchor=(i/ALARMS_PER_PAGE)*ALARMS_PER_PAGE;break;
   }
   alarmFirst=alarmAnchor;
   lastActivity=millis();render();
@@ -10800,11 +10807,11 @@ static bool isAcceptedButtonTap(int x,int y) {
     case COOKING_INFO:
       return contains(GUIDE_BACK,x,y) ||
              (contains(GUIDE_PREV,x,y) && cookingGuidePage>0) ||
-             (contains(GUIDE_NEXT,x,y) && cookingGuidePage<1);
+             (contains(GUIDE_NEXT,x,y) && (cookingGuidePage+1)*COOKING_GUIDE_PER_PAGE<COOKING_GUIDE_ITEMS);
     case ADVANCED_SETTINGS:
       return contains(ADV_RESTART,x,y) || contains(ADV_CLEAR,x,y) ||
              contains(ADV_CALIBRATE,x,y) ||
-             contains(NAV_HOME,x,y) || contains(NAV_NEXT,x,y);
+             contains(ADV_BACK,x,y) || contains(ADV_HOME,x,y);
     case CALIBRATE_TARGETS: return false;
     case CALIBRATE_VERIFY:
       return contains(VERIFY_RETRY,x,y) ||
@@ -10812,8 +10819,8 @@ static bool isAcceptedButtonTap(int x,int y) {
     case VIEW_ALARMS:
       if(contains(LIST_NAV_HOME,x,y))return true;
       if(contains(LIST_NAV_PREV,x,y))return alarmFirst>0;
-      if(contains(LIST_NAV_NEXT,x,y))return alarmFirst+4<visibleAlarmCount;
-      for(int i=0;i<4;i++)if(contains(alarmCardAt(i),x,y))
+      if(contains(LIST_NAV_NEXT,x,y))return alarmFirst+ALARMS_PER_PAGE<visibleAlarmCount;
+      for(int i=0;i<ALARMS_PER_PAGE;i++)if(contains(alarmCardAt(i),x,y))
         return alarmFirst+i<visibleAlarmCount;
       return false;
     case ALARM_DETAILS:
@@ -10950,7 +10957,7 @@ void onTap(int x,int y) {
       if(contains(GUIDE_BACK,x,y))goBack();
       else if(contains(GUIDE_PREV,x,y) && cookingGuidePage>0) {
         cookingGuidePage--;render();
-      } else if(contains(GUIDE_NEXT,x,y) && cookingGuidePage<1) {
+      } else if(contains(GUIDE_NEXT,x,y) && (cookingGuidePage+1)*COOKING_GUIDE_PER_PAGE<COOKING_GUIDE_ITEMS) {
         cookingGuidePage++;render();
       }
       break;
@@ -10958,8 +10965,8 @@ void onTap(int x,int y) {
       if(contains(ADV_RESTART,x,y))confirm(CA_RESTART_DEVICE);
       else if(contains(ADV_CLEAR,x,y))confirm(CA_CLEAR_ALL_ALARMS);
       else if(contains(ADV_CALIBRATE,x,y))confirm(CA_START_CALIBRATION);
-      else if(contains(NAV_HOME,x,y))goBack();
-      else if(contains(NAV_NEXT,x,y))goHome();
+      else if(contains(ADV_BACK,x,y))goBack();
+      else if(contains(ADV_HOME,x,y))goHome();
       break;
     }
     case CALIBRATE_TARGETS: break; // raw touches handled before onTap()
@@ -10974,10 +10981,10 @@ void onTap(int x,int y) {
         break;
       }
       if(contains(LIST_NAV_NEXT,x,y)) {
-        if(alarmFirst+4<visibleAlarmCount){alarmPageOffset++;selectedAlarm=-1;render();}
+        if(alarmFirst+ALARMS_PER_PAGE<visibleAlarmCount){alarmPageOffset++;selectedAlarm=-1;render();}
         break;
       }
-      for(int slot=0;slot<4;slot++) {
+      for(int slot=0;slot<ALARMS_PER_PAGE;slot++) {
         if(!contains(alarmCardAt(slot),x,y))continue;
         const int p=alarmFirst+slot;
         sortAlarms();
@@ -12640,7 +12647,7 @@ static void nbase(bool withHeader=true) {
   nativeHeaderText=nullptr;nativeDueEdge=nullptr;nativeStartupProgressBar=nullptr;
   homeDateText=nullptr;homeClockText=nullptr;homeVersionText=nullptr;
   const bool blackApproved=(screen==CREATE_ALARM || screen==EDIT_TIME ||
-       screen==RECIPE_OPTIONS || (screen==VIEW_ROSTER && (rosterForCreate || rosterForEdit)));
+       screen==RECIPE_OPTIONS || screen==CONFIRMATION || (screen==VIEW_ROSTER && (rosterForCreate || rosterForEdit)));
   lv_obj_set_style_bg_color(nativeRoot,blackApproved?lv_color_black():nativeColor(NAVY),0);
   lv_obj_set_style_bg_opa(nativeRoot,LV_OPA_COVER,0);
   lv_obj_set_style_text_font(nativeRoot,&cool_mono_regular_18,0); // Project minimum.
@@ -12818,7 +12825,7 @@ static String homeAlarmTime(int minute) {
 static String homeCookName(const char* initials) {
   for(int i=0;i<COOK_COUNT;i++)
     if(strcasecmp(cooks[i].initials,initials)==0 && cooks[i].name[0])
-      return String(cooks[i].name);
+      return cookFirstName(i); // First name in alarm UI, with initials fallback.
   return String(initials); // Keep alarm usable if the cook was removed from roster.
 }
 static void homeRefreshClockAndDate() {
@@ -12887,55 +12894,68 @@ static void nativeRender(){
       ntitle("Settings");
       ntext(String("RSSI: ")+(startupRSSIValid?String(startupRSSI)+" dBm":"OFF"),{170,29,140,23},TEAL,true);
       nbutton(SETTINGS_ROSTER,"View Roster",YELLOW,BLACK);
-      nbutton(SETTINGS_RECIPES,"View Recipes");
-      nbutton(SETTINGS_COOLING,"COOLING INFO",TEAL);
-      nbutton(SETTINGS_COOKING,"COOKING INFO",TEAL);
+      nbutton(SETTINGS_RECIPES,"View Recipes",BLUE,WHITE);
+      nbutton(SETTINGS_COOLING,"COOLING INFO",SETTINGS_TEAL,WHITE);
+      nbutton(SETTINGS_COOKING,"COOKING INFO",UI_PURPLE,WHITE);
       ntile(SETTINGS_BLANK_LEFT,PANEL);ntile(SETTINGS_BLANK_RIGHT,PANEL);
-      nbutton(SETTINGS_HOME,"HOME");
-      nbutton(SETTINGS_ADVANCED,"ADVANCED",YELLOW,BLACK);
+      nbutton(SETTINGS_HOME,"HOME",GREEN,WHITE);
+      nbutton(SETTINGS_ADVANCED,"ADVANCED",SETTINGS_ORANGE,BLACK);
       break;
     }
     case ADVANCED_SETTINGS: {
       ntitle("Advanced Settings");
       nbutton(ADV_RESTART,"RESTART",YELLOW,BLACK);
-      nbutton(ADV_CLEAR,"CLEAR ALL ALARMS",RED);
-      nbutton(ADV_CALIBRATE,"CALIBRATE SCREEN",GREEN);
-      ntile(ADV_BLANK1,GREY);ntile(ADV_BLANK2,GREY);ntile(ADV_BLANK3,GREY);
-      nbutton(NAV_HOME,"BACK",GREY);nbutton(NAV_NEXT,"HOME");
+      nbutton(ADV_CLEAR,"CLEAR ALL ALARMS",DARK_RED,WHITE);
+      nbutton(ADV_CALIBRATE,"CALIBRATE SCREEN",SETTINGS_TEAL,WHITE);
+      ntile(ADV_BLANK1,PANEL);ntile(ADV_BLANK2,PANEL);ntile(ADV_BLANK3,PANEL);
+      nbutton(ADV_BACK,"BACK",BLUE,WHITE);
+      nbutton(ADV_HOME,"HOME",GREEN,WHITE);
       break;
     }
     case VIEW_ALARMS: {
       sortAlarms();
-      const int last=visibleAlarmCount?((visibleAlarmCount-1)/4)*4:0;
-      alarmFirst=constrain(alarmAnchor+4*alarmPageOffset,0,last);
-      ntitle("View Alarms");
-      ntext(visibleAlarmCount?String(alarmFirst+1)+"-"+String(min(alarmFirst+4,visibleAlarmCount))+"/"+String(visibleAlarmCount):"0/0",{234,29,76,23},TEAL,true);
-      for(int r=0;r<4;r++) {
-        int p=alarmFirst+r;
+      const int last=visibleAlarmCount?((visibleAlarmCount-1)/ALARMS_PER_PAGE)*ALARMS_PER_PAGE:0;
+      alarmFirst=constrain(alarmAnchor+ALARMS_PER_PAGE*alarmPageOffset,0,last);
+      const int pages=max(1,(visibleAlarmCount+ALARMS_PER_PAGE-1)/ALARMS_PER_PAGE);
+      const int page=alarmFirst/ALARMS_PER_PAGE;
+      // No view title. 2 lines per card, 6 cards per page.
+      for(int slot=0;slot<ALARMS_PER_PAGE;slot++) {
+        const int p=alarmFirst+slot;
         if(p>=visibleAlarmCount)break;
         const Alarm &a=alarms[sorted[p]];
         const uint16_t bg=a.status==AlarmStatus::Done?GREEN:a.status==AlarmStatus::Pending?(sorted[p]==nextPending()?RED:YELLOW):GREY;
         const uint16_t fg=bg==YELLOW?BLACK:WHITE;
-        const Rect row=alarmCardAt(r);
-        ntile(row,bg,sorted[p]==selectedAlarm?TEAL:DIM,4);
-        ntext(String(a.initials)+" "+clockHHMM(a.whenMin)+" c"+String(a.stage)+" "+String(a.recipe),{row.x+5,row.y+4,row.w-10,row.h-6},fg);
+        const Rect card=alarmCardAt(slot);
+        ntile(card,bg,sorted[p]==selectedAlarm?TEAL:DIM,4);
+        ntext(String("c")+String(a.stage)+" "+homeAlarmTime(a.whenMin)+" "+
+              homeCookName(a.initials),{card.x+4,card.y+3,card.w-8,20},fg);
+        ntext(String(a.recipe),{card.x+4,card.y+23,card.w-8,19},fg);
       }
+      ntile(LIST_NAV_PAGE,PANEL,0,5);
+      ntext(String(page+1)+" / "+String(pages),
+            {LIST_NAV_PAGE.x+3,LIST_NAV_PAGE.y+16,LIST_NAV_PAGE.w-6,27},WHITE,true);
+      nbutton(LIST_NAV_HOME,"HOME",YELLOW,BLACK);
       nbutton(LIST_NAV_PREV,"PREV",BLUE,WHITE,alarmFirst>0);
-      nbutton(LIST_NAV_HOME,"HOME");
-      nbutton(LIST_NAV_NEXT,"NEXT",BLUE,WHITE,alarmFirst+4<visibleAlarmCount);
+      nbutton(LIST_NAV_NEXT,"NEXT",BLUE,WHITE,alarmFirst+ALARMS_PER_PAGE<visibleAlarmCount);
       break;
     }
     case ALARM_DETAILS: {
-      if(selectedAlarm<0 || selectedAlarm>=alarmCount){nline("Alarm unavailable",90);nbutton(DETAIL_BACK,"BACK",GREY);break;}
+      if(selectedAlarm<0 || selectedAlarm>=alarmCount) {
+        nline("Alarm unavailable",90);nbutton(DETAIL_BACK,"BACK",DARK_RED);break;
+      }
       const Alarm& a=alarms[selectedAlarm];
       ntile({8,32,304,45},PANEL);
-      nline(String(a.initials)+" "+clockHHMM(a.whenMin)+" c"+String(a.stage),45);
+      homeAutoFit(String("c")+String(a.stage)+" "+homeAlarmTime(a.whenMin)+" "+
+                  homeCookName(a.initials),45,57);
       ntile({8,83,304,40},PANEL);
-      nline(String(a.recipe),89);
+      homeAutoFit(String(a.recipe),110,53);
       const AlarmStatus st=detailPreviewChanged?detailPreviewStatus:a.status;
       const bool overdue=st==AlarmStatus::Pending && alarmPastDue(a);
-      nbutton(DETAIL_STATUS,overdue?"OVERDUE":st==AlarmStatus::Pending?"PENDING":st==AlarmStatus::Done?"DONE":"CANCELLED",overdue?DARK_RED:st==AlarmStatus::Done?GREEN:st==AlarmStatus::Cancelled?GREY:BLUE,WHITE,a.status!=AlarmStatus::Cancelled);
-      nbutton(DETAIL_EDIT,"EDIT");nbutton(DETAIL_BACK,"BACK",GREY);
+      nbutton(DETAIL_STATUS,overdue?"OVERDUE":st==AlarmStatus::Pending?"PENDING":st==AlarmStatus::Done?"DONE":"CANCELLED",
+              overdue?DARK_RED:st==AlarmStatus::Done?GREEN:st==AlarmStatus::Cancelled?GREY:BLUE,WHITE,
+              a.status!=AlarmStatus::Cancelled);
+      nbutton(DETAIL_BACK,"BACK",DARK_RED,WHITE);
+      nbutton(DETAIL_EDIT,"EDIT",GREEN,WHITE);
       break;
     }
     case VIEW_ROSTER: {
@@ -13076,18 +13096,27 @@ static void nativeRender(){
       break;
     }
     case CONFIRMATION: {
-      nline(confirmationQuestion(),46,WHITE,48);
-      const bool detailsConfirm=(confirmAction==CA_HOME_DONE || confirmAction==CA_LIST_DONE || confirmAction==CA_LIST_CANCEL || confirmAction==CA_LIST_PENDING || confirmAction==CA_SAVE_EDIT);
-      const Alarm* a=confirmAction==CA_SAVE_EDIT?&draft:(selectedAlarm>=0 && selectedAlarm<alarmCount?&alarms[selectedAlarm]:nullptr);
+      const bool detailsConfirm=(confirmAction==CA_HOME_DONE || confirmAction==CA_LIST_DONE ||
+        confirmAction==CA_LIST_CANCEL || confirmAction==CA_LIST_PENDING || confirmAction==CA_SAVE_EDIT);
+      const Alarm* a=confirmAction==CA_SAVE_EDIT?&draft:
+        (selectedAlarm>=0 && selectedAlarm<alarmCount?&alarms[selectedAlarm]:nullptr);
       if(detailsConfirm && a) {
-        nline(String(a->initials)+" "+clockHHMM(a->whenMin)+" c"+String(a->stage),91,TEAL);
-        ntile({9,132,302,43},PANEL);
-        nline(String(a->recipe),143,TEAL);
-      } else if(confirmAction==CA_RESTART_DEVICE)nline("Saved alarms remain",143,TEAL);
-      else if(confirmAction==CA_CLEAR_ALL_ALARMS)nline("This cannot be undone",143,YELLOW);
-      else if(confirmAction==CA_CREATE && selectedCook>=0 && selectedRecipe>=0)
-        nline(String(cooks[selectedCook].initials)+" - "+String(recipes[selectedRecipe].name),143,TEAL);
-      nbutton(CONFIRM_NO,"NO",DARK_RED);nbutton(CONFIRM_YES,"YES",GREEN);
+        homeAutoFit(String("c")+String(a->stage)+" "+homeAlarmTime(a->whenMin)+" "+
+                    homeCookName(a->initials),53,49);
+        homeAutoFit(String(a->recipe),109,49);
+        ntext(confirmationQuestion(),{10,137,300,34},WHITE,false);
+      } else {
+        ntext(confirmationQuestion(),{10,57,300,41},WHITE,false);
+        if(confirmAction==CA_RESTART_DEVICE)
+          ntext("Saved alarms remain",{10,122,300,26},WHITE,false);
+        else if(confirmAction==CA_CLEAR_ALL_ALARMS)
+          ntext("This cannot be undone",{10,122,300,26},YELLOW,false);
+        else if(confirmAction==CA_CREATE && selectedCook>=0 && selectedRecipe>=0)
+          ntext(String(cooks[selectedCook].initials)+" - "+String(recipes[selectedRecipe].name),
+                {10,122,300,33},WHITE,false);
+      }
+      nbutton(CONFIRM_NO,"NO",DARK_RED,WHITE);
+      nbutton(CONFIRM_YES,"YES",GREEN,WHITE);
       break;
     }
     case ALARM_DUE: {
@@ -13113,22 +13142,32 @@ static void nativeRender(){
     }
     case COOLING_INFO: {
       ntitle("COOLING GUIDE");
+      // Approved CoolInfo reference targets; existing C1/C2 scheduling unchanged.
+      // Sheets integration for this reference still needs an API data endpoint.
       ntile({8,59,304,64},PANEL);ntile({8,130,304,64},PANEL);
-      ntext("c1  +2 HOURS",{16,64,288,22});nline("60 C  -->  20 C",89,TEAL);
-      ntext("c2  +6 HOURS TOTAL",{16,135,288,22});nline("20 C  -->  4 C",160,TEAL);
-      nbutton({8,202,304,34},"BACK",GREY);
+      ntext("c1  +2 HOURS",{16,64,288,22},WHITE,false);
+      ntext("60\xC2\xB0" "C -> BELOW 21\xC2\xB0" "C",{15,90,290,28},TEAL,true);
+      ntext("c2  +6 HOURS TOTAL",{16,135,288,22},WHITE,false);
+      ntext("21\xC2\xB0" "C -> BELOW 4\xC2\xB0" "C",{15,161,290,28},TEAL,true);
+      nbutton({8,202,304,34},"BACK",BLUE,WHITE);
       break;
     }
     case COOKING_INFO: {
-      ntitle("COOKING GUIDE",cookingGuidePage,2);
-      for(int i=0;i<6;i++){
-        int j=cookingGuidePage*6+i;if(j>=COOKING_GUIDE_ITEMS)break;
-        Rect r={8,54+i*24,304,22};ntile(r,PANEL);
-        ntext(String(COOKING_GUIDE[j].label)+"     "+String(COOKING_GUIDE[j].degC)+" C",{r.x+5,r.y+2,r.w-10,r.h-3});
+      const int pages=max(1,(COOKING_GUIDE_ITEMS+COOKING_GUIDE_PER_PAGE-1)/COOKING_GUIDE_PER_PAGE);
+      cookingGuidePage=constrain(cookingGuidePage,0,pages-1);
+      ntitle("COOKING GUIDE",cookingGuidePage,pages);
+      for(int slot=0;slot<COOKING_GUIDE_PER_PAGE;slot++) {
+        const int j=cookingGuidePage*COOKING_GUIDE_PER_PAGE+slot;
+        if(j>=COOKING_GUIDE_ITEMS)break;
+        const Rect r={8,52+slot*48,304,45};
+        ntile(r,PANEL);
+        ntext(String(COOKING_GUIDE[j].label),{r.x+6,r.y+2,r.w-54,r.h-4},WHITE,false);
+        ntext(String(COOKING_GUIDE[j].degC)+"\xC2\xB0" "C",
+              {r.x+r.w-44,r.y+11,40,23},TEAL,true);
       }
+      nbutton(GUIDE_BACK,"BACK",DARK_RED,WHITE);
       nbutton(GUIDE_PREV,"PREV",BLUE,WHITE,cookingGuidePage>0);
-      nbutton(GUIDE_BACK,"BACK",GREY);
-      nbutton(GUIDE_NEXT,"NEXT",BLUE,WHITE,cookingGuidePage<1);
+      nbutton(GUIDE_NEXT,"NEXT",BLUE,WHITE,(cookingGuidePage+1)*COOKING_GUIDE_PER_PAGE<COOKING_GUIDE_ITEMS);
       break;
     }
     case CALIBRATE_TARGETS: {
