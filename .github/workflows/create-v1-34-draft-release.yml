@@ -1,0 +1,29 @@
+name: Create Freenove v1.34 draft release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-v1-34-draft-release.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create v1.34 draft (do not activate OTA)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "freenove-v1.34" >/dev/null 2>&1; then
+            echo "freenove-v1.34 already exists"
+          else
+            gh release create "freenove-v1.34" \
+              --target main \
+              --title "Freenove Cooling Alarm v1.34 — Approved UI (No Keyboard)" \
+              --notes "Staged source test: consolidated approved UI screens, buzzer-only button acknowledgment, blank HOME when no pending alarm, and large-button recipe selection. Corrected caption.indexOf newline syntax. Compile and test before uploading Sketch_13.1_LVGL.ino.bin. Draft release does not update firmware.json." \
+              --draft
+          fi
