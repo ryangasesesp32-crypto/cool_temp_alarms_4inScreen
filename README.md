@@ -10,7 +10,7 @@ The current development sketch is [Sketch_13.1_LVGL.ino](./Sketch_13.1_LVGL.ino)
 - This cap supersedes the previously approved 24px Edit Alarm time-button font; non-button text (including header, recipe information, and alarm details) retains its current sizes.
 - No changes to alarm timing, Sheet APIs, OTA logic, screen touch targets, acknowledgement, or physical buttons.
 
-**Release/OTA status:** v1.37 was already **published** with a compiled binary on November 12, 2026, **before** this 20px typography change. v1.38 is therefore a separate next build so devices already running v1.37 can detect it later. v1.38 compilation and hardware behavior are not yet verified. The OTA [firmware.json](./firmware.json) still points to the published v1.37 release until a corresponding v1.38 .bin is built, attached and published.
+**Release/OTA status:** v1.37 was already **published** with a compiled binary on November 12, 2026, **before** this 20px typography change. v1.38 is therefore a separate next build so devices already running v1.37 can detect it later. v1.38 compilation and hardware behavior are not yet verified. At the user's request, the OTA [firmware.json](./firmware.json) **now points to v1.38**, even though the [v1.38 release](https://github.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/releases) remains a **draft without a .bin**. **Warning:** Until the matching `Sketch_13.1_LVGL.ino.bin` has been attached and the release published, OTA checks may detect v1.38 but downloads will fail. Attach the compiled firmware and publish the draft to make the staged OTA URL usable.
 
 ## v1.37 — Published approved screen changes
 
