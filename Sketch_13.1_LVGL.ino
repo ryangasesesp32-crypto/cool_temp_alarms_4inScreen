@@ -12301,7 +12301,7 @@ static bool configScreenMasked(String label) {
 }
 static void drawReadNavigation(int page,int pages) {
   nbutton(READ_NAV_PAGE,String(page+1)+"/"+String(pages),GREY,WHITE,false);
-  nbutton(READ_NAV_BACK,"BACK",BLUE,WHITE);
+  nbutton(READ_NAV_BACK,"BACK",BLUE,WHITE,true);
   nbutton(READ_NAV_PREV,"PREV",BLUE,WHITE,page>0);
   nbutton(READ_NAV_NEXT,"NEXT",BLUE,WHITE,page+1<pages);
 }
