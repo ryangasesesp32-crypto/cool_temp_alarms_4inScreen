@@ -9485,8 +9485,8 @@ static StartupSerialMirror startupSerial(Serial);
 // PUBLIC OTA-SAFE build. Wi-Fi credentials and Apps Script token remain in
 // device Preferences (NVS), provisioned by the earlier v1.14 USB build.
 // Do not embed or publish private credentials in this source or binary.
-static const char* FIRMWARE_VERSION = "v1.44"; // Freenove-only OTA version; original alarm logic remains v1.31
-static const char* FREENOVE_BUILD_ID = "LVGL-F4-BreakLogReliableHTTP-v1.44";
+static const char* FIRMWARE_VERSION = "v1.45"; // Freenove-only OTA version; original alarm logic remains v1.31
+static const char* FREENOVE_BUILD_ID = "LVGL-F4-LowRAM-TLSdiag-v1.45";
 static const char* GITHUB_OTA_MANIFEST_URL = "https://raw.githubusercontent.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/main/firmware.json";
 // SAFETY: do not point this board at the ELEGOO production manifest.
 // The Freenove manifest may point to a staged draft release; OTA download will
@@ -9610,7 +9610,7 @@ extern TFT_eSPI tft;
 // without allocating a full framebuffer (which would exhaust ESP32 RAM).
 // The unused legacy 4-bit framebuffer was removed in v1.32.
 static constexpr uint16_t PANEL_W = 480, PANEL_H = 320;
-static constexpr uint16_t LVGL_DRAW_LINES = 12; // 480*12*2=11,520 bytes, allocated on heap
+static constexpr uint16_t LVGL_DRAW_LINES = 4; // v1.45: 480*4*2=3,840 bytes internal; saves 7,680 bytes for HTTPS TLS
 // Large frame buffers must NOT be .bss globals on classic ESP32: DRAM linker overflow.
 // Allocate at boot, preferably in PSRAM when supported by the physical board.
 static lv_color_t *lvDrawPixels = nullptr;
@@ -12274,7 +12274,10 @@ bool diagPOSTOnce(const String& body, String& reply, String& failure) {
   if(WiFi.status()!=WL_CONNECTED){failure="NO WIFI";return false;}
   String redirect;
   {
-    WiFiClientSecure postClient;postClient.setInsecure();postClient.setTimeout(20000);
+    // The POST's TLS buffers must be destroyed before the second Google
+    // ContentService HTTPS handshake. Keep this scope separate from GET.
+    WiFiClientSecure postClient;
+    postClient.setInsecure();postClient.setTimeout(20000);
     HTTPClient postHttp;
     postHttp.setReuse(false);
     postHttp.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
@@ -12284,9 +12287,10 @@ bool diagPOSTOnce(const String& body, String& reply, String& failure) {
       failure="POST BEGIN FAILED";return false;
     }
     postHttp.addHeader("Content-Type","application/json");
-    int status=postHttp.POST(body);
+    const int status=postHttp.POST(body);
     if(status==HTTP_CODE_OK) {
-      reply=postHttp.getString();postHttp.end();
+      reply=postHttp.getString();
+      postHttp.end();
       String trimmed=reply;trimmed.trim();
       if(!trimmed.startsWith("{")){failure="POST HTTP200 NON-JSON";return false;}
       return true;
@@ -12299,35 +12303,64 @@ bool diagPOSTOnce(const String& body, String& reply, String& failure) {
     redirect=postHttp.header("Location");
     redirect.trim();
     postHttp.end();
-  }
-  // A single POST may already have written to Sheets: never claim failure
-  // means no server write. Do not log the token-bearing Google redirect URL.
-  if(!redirect.startsWith("https://script.googleusercontent.com/")) {
+  } // postClient and postHttp destructors complete here.
+  // A successful POST may already have written the row to Google Sheets.
+  // Never log the redirect URL: Google's ContentService URL carries a token.
+  if(!redirect.startsWith("https://script.googleusercontent.com/")){
     failure="POST REDIRECT HOST UNEXPECTED";return false;
   }
   if(WiFi.status()!=WL_CONNECTED){failure="REDIRECT WIFI DISCONNECTED";return false;}
 
-  WiFiClientSecure getClient;getClient.setInsecure();getClient.setTimeout(20000);
+  // Yield the network task briefly so the prior TLS socket can be reclaimed.
+  // This also runs in the startup uploader, without blocking the touch loop
+  // during background RecipesMade uploads.
+  delay(40);
+  Serial.printf("[HTTP] POST socket closed: internalFree=%u, largestInternal=%u, freeHeap=%u\n",
+    (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+    (unsigned)ESP.getFreeHeap());
+
+  WiFiClientSecure getClient;
+  getClient.setInsecure();getClient.setTimeout(20000);
   HTTPClient getHttp;
   getHttp.setReuse(false);
-  // Match the working Break Log redirect GET. If Google sends another
-  // redirect, GET-to-GET following is permitted and preserves no POST headers.
+  // A fresh redirect GET never carries POST headers or a reused TLS socket.
   getHttp.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   getHttp.setConnectTimeout(20000);getHttp.setTimeout(20000);
-  Serial.printf("[HTTP] Redirect GET start: wifi=%d, rssi=%d, heap=%u, maxAlloc=%u\n",
+  Serial.printf("[HTTP] Redirect GET start: wifi=%d, rssi=%d, heap=%u, maxAlloc=%u, internalLargest=%u\n",
     (int)WiFi.status(),(int)WiFi.RSSI(),
-    (unsigned)ESP.getFreeHeap(),(unsigned)ESP.getMaxAllocHeap());
+    (unsigned)ESP.getFreeHeap(),(unsigned)ESP.getMaxAllocHeap(),
+    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
   if(!getHttp.begin(getClient,redirect)){
-    failure="REDIRECT BEGIN FAILED";return false;
+    failure="REDIRECT BEGIN FAILED";
+    Serial.printf("[HTTP] Redirect begin failed: largestInternal=%u\n",
+      (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
+    return false;
   }
-  int status=getHttp.GET();
+  const int status=getHttp.GET();
   if(status!=HTTP_CODE_OK) {
+    // HTTP -1 is generic. Capture the underlying mbedTLS reason *before*
+    // ending the HTTP client; codes such as -0x7F00 identify OOM.
+    char tlsMessage[128]={0};
+    const int tlsCode=getClient.lastError(tlsMessage,sizeof(tlsMessage));
+    const uint32_t largestDuringFailure=
+      heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
+    const uint32_t internalDuringFailure=
+      heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);
     failure="REDIRECT HTTP="+String(status);
     if(status<0)failure+=" "+HTTPClient::errorToString(status);
     getHttp.end();
-    Serial.printf("[HTTP] Redirect failed: status=%d, wifi=%d, heap=%u, maxAlloc=%u\n",
-      status,(int)WiFi.status(),(unsigned)ESP.getFreeHeap(),
-      (unsigned)ESP.getMaxAllocHeap());
+    Serial.printf("[HTTP] Redirect failed: status=%d, TLS=%d (%s), wifi=%d, heap=%u, maxAlloc=%u, internalFree=%u, internalLargest=%u\n",
+      status,tlsCode,tlsMessage,(int)WiFi.status(),
+      (unsigned)ESP.getFreeHeap(),(unsigned)ESP.getMaxAllocHeap(),
+      (unsigned)internalDuringFailure,(unsigned)largestDuringFailure);
+    // DNS test only after a failed TLS connection, never on the success path.
+    // Do not log the signed Location path or query string.
+    if(status<0 && tlsCode==0 && WiFi.status()==WL_CONNECTED) {
+      IPAddress resolved;
+      const bool dnsOK=WiFi.hostByName("script.googleusercontent.com",resolved)==1;
+      Serial.printf("[HTTP] Redirect host DNS check: %s\n",dnsOK?"OK":"FAILED");
+    }
     return false;
   }
   reply=getHttp.getString();getHttp.end();
