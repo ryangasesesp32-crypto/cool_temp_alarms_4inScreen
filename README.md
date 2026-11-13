@@ -1,5 +1,22 @@
 # Freenove Cooling Alarm — 4-inch Native LVGL
 
+## v1.46 — USB build: View Config + View Made Recipes (SOURCE READY)
+
+**USB installation:** Update/deploy the PRIVATE Google Apps Script v1.35 to the **same existing web app deployment** first. In Arduino IDE, open `Sketch_13.1_LVGL.ino`, select the known-working Freenove ESP32 board settings and libraries, compile, and upload through USB. This version is **not OTA-published** and `firmware.json` remains at v1.44.
+
+- Settings → **VIEW MADE RECIPES** uses the previously empty left button on row 3. Downloads `GET action=madeList` once at every connected startup independently of `UpdateDataNow`. The server excludes Cancelled entries and dates before today, includes expiry today, then sorts expiry ascending. The device validates and caches the read-only data in LittleFS and filters again against the verified local date when viewed.
+- Advanced Settings → **VIEW CONFIG** uses the first empty Advanced Settings button and displays Config rows directly from the cached config response in NVS, masking token/password/secret values.
+- Each list has four controls on one bottom row: **PAGE | BACK | PREV | NEXT**. Smart previous/next disabling and the existing date/time/firmware header are preserved.
+- The existing alarm logic, RecipesMade POST upload queue, duplicate EntryID checks, Q/UP/F/blank marker, HTTPS retry, Cooking Info and Cooling Info screens remain unchanged.
+- Unsuccessful made-list downloads preserve the previous local snapshot. Viewing a list does not contact Google.
+
+The Apps Script v1.35 is kept private because it contains the existing API token. Do **not** upload it to the public firmware repository.
+
+**Status:** Source-only change. Requires compilation and USB hardware verification; neither has been completed here.
+
+[Arduino IDE sketch](./Sketch_13.1_LVGL.ino) · [Full v1.46 text source](./CoolingAlarm_Freenove_v1_46.txt)
+
+
 ## v1.45 — Google ContentService redirect TLS memory diagnostics (SOURCE READY; OTA NOT PUBLISHED)
 
 **Status:** v1.45 source is committed to `main`, but has **not** been compiled, hardware-tested, or published as an OTA binary. The existing `firmware.json` intentionally remains on v1.44 until a verified v1.45 release binary is attached.
