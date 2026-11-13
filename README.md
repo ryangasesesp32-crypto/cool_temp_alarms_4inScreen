@@ -1,5 +1,23 @@
 # Freenove Cooling Alarm — 4-inch Native LVGL
 
+## v1.41 — Paired alarm rows, HOME-style due screen and RecipesMade sync (SOURCE ONLY)
+
+**Status:** v1.41 Arduino source has been committed for review and device compilation; **no v1.41 binary or OTA release has been published**. The existing `firmware.json` deliberately still points to the **published v1.40** firmware, so the installed devices will not auto-update to an untested build.
+
+The seven requested changes are in the [current Arduino sketch](./Sketch_13.1_LVGL.ino) and matching [downloadable v1.41 text snapshot](./CoolingAlarm_Freenove_v1_41.txt):
+
+1. **Edit Save:** commit without a second confirmation.
+2. **Recipe display:** use actual LVGL font measurements; first try one line at the normal font sizes, then 18px two-line word wrap, with ellipsis only when needed. Resolve legacy 31-byte stored recipe prefixes against the full cached catalog when unambiguous.
+3. **Cook underline:** underline only the name on HOME and Alarm Due.
+4. **RecipesMade synchronization:** preserve one EntryID per C1/C2 pair, store PLU/Item/DateMade/DateExpiry/Cook/TimeMade locally in LittleFS, calculate expiry as date made + 6 days, mark Cancelled only after both stages are cancelled. A low-priority, core-0 FreeRTOS task checks for queued events every `Config.UploadRetryInMinutes` (default 5), turns on Wi-Fi only when needed, posts to the Apps Script endpoint using the saved device token, verifies EntryID+status, then turns Wi-Fi off. Acknowledged records stay available for later cancellation. All uploads retry idempotently.
+5. **View Alarms:** up to three C1/C2 pairs per page, one row per pair with left/right independently tappable blocks and cancelled stages hidden.
+6. **Alarm Due:** same HOME information fonts, positions and full names, red rounded alarm card, non-blinking red border below header, one wide green DONE button; old LVGL redraw-on-chirp code removed.
+7. **Status-bar upload cue:** Q (yellow queued), UP (cyan active), OK (green success briefly), ! (red retry needed). FreeRTOS never updates LVGL directly.
+
+**Server requirement:** Deploy the companion **private Apps Script v1.30** in the existing web app. It adds typed `uploadRetryInMinutes` to `action=config` and idempotent, lock-protected `action=recipesMadeUpsert` POST handling. The script contains a private token and must **not** be placed in this public GitHub repository.
+
+**Test checklist:** deploy Apps Script v1.30, compile the v1.41 sketch for the actual Freenove board, test touchscreen/button/LED/buzzer responsiveness during uploads, verify one RecipesMade record per C1/C2 pair, expiry +6 days and creation time, and verify cancelling only C2 leaves Active while cancelling both stages changes that EntryID to Cancelled. Create/publish a v1.41 OTA release and edit `firmware.json` **only after** successful hardware testing.
+
 ## v1.40 — Alarm Due "wave" and slow-chirp fix (compiled, not hardware-tested)
 
 Baseline is v1.39; the only change is how the flashing red Alarm Due border is drawn. (An earlier solid-border diagnostic also labelled v1.40, and a v1.41 review-fix build, were withdrawn and are not part of this version.)
@@ -15,7 +33,7 @@ Baseline is v1.39; the only change is how the flashing red Alarm Due border is d
 **Build.** `arduino-cli`, ESP32 core 3.3.12, ESP32 Dev Module, Minimal SPIFFS (1.9MB APP with OTA), Freenove FNK0114S `TFT_eSPI`/`lvgl` 8.4.0 and `display.h`/`display.cpp`, ArduinoJson 7.4.3. `Sketch_13.1_LVGL.ino.bin` is 1,658,528 bytes, SHA-256 `77de0ab9bf98b9947c1350a908041adcb371c73705b2e7257ea96a2f7460d84f`.
 
 - [Arduino source](./Sketch_13.1_LVGL.ino) and identical [v1.40 text snapshot](./CoolingAlarm_Freenove_v1_40.txt).
-- [firmware.json](./firmware.json) **points to v1.40**. The `freenove-v1.40` release is a draft; OTA downloads fail (devices keep their current firmware) until the binary is attached and the release is published.
+- [firmware.json](./firmware.json) **points to v1.40**. The `freenove-v1.40` release is published and includes the compiled binary; the manifest is still pinned to this version while v1.41 is tested.
 
 ## v1.39 — Google Sheets configurable Alarm Due buzzer cadence (source ready)
 
