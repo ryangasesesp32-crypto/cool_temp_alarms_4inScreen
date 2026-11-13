@@ -13093,6 +13093,17 @@ static lv_obj_t* ntile(Rect logical,uint16_t bg,uint16_t border=DIM,int radius=5
   if(!enabled)lv_obj_set_style_bg_color(o,nativeColor(GREY),0);
   return o;
 }
+// Counts UTF-8 code points, not bytes, for the adaptive button captions.
+// Restored in v1.41: the forward declaration existed but its definition
+// was dropped during the HOME font-fitting refactor, causing a link failure.
+static uint16_t homeUtf8Chars(const String& value) {
+  uint16_t count=0;
+  for(size_t i=0;i<value.length();++i) {
+    const uint8_t octet=static_cast<uint8_t>(value[i]);
+    if((octet & 0xC0)!=0x80)++count;
+  }
+  return count;
+}
 // Shared caption renderer for every button: maximum 20px bold, minimum 18px.
 // Fit in one or two centered lines as permitted; long labels show ... (LVGL DOT).
 // Keep existing touch targets, button backgrounds, and non-button text unchanged.
