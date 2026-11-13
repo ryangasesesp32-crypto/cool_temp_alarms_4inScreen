@@ -1,0 +1,30 @@
+name: Create Freenove v1.41 draft release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-v1-41-draft-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stage v1.41 firmware release for manual binary upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "freenove-v1.41" >/dev/null 2>&1; then
+            echo "Existing v1.41 release retained"
+          else
+            gh release create "freenove-v1.41" \
+              --target main \
+              --title "Freenove Cooling Alarm v1.41 — Paired Alarms and RecipesMade Sync" \
+              --notes "v1.41 source and the matching CoolingAlarm_Freenove_v1_41.txt are on main. Changes: (1) direct SAVE on Edit Alarm; (2) full recipe-name smart fitting and two-line wrapping; (3) underlined cook name; (4) FreeRTOS queued RecipesMade synchronization with EntryID, date and expiry, local persistence, status updates, and configurable UploadRetryInMinutes; (5) C1/C2 paired rows on View Alarms; (6) HOME-format Alarm Due screen with a fixed red border and DONE; (7) nonblinking upload indicator. The C++ source must be compiled for the Freenove hardware and tested before publication. Upload the compiled Sketch_13.1_LVGL.ino.bin asset to this draft, verify the filename and target version, and only then publish. firmware.json points at v1.41; OTA downloads cannot succeed until a matching compiled binary is attached and the release is published." \
+              --draft
+          fi
