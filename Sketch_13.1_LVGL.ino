@@ -9613,6 +9613,7 @@ static lv_obj_t *nativeHeaderText=nullptr;
 static lv_obj_t *homeDateText=nullptr;
 static lv_obj_t *homeClockText=nullptr;
 static lv_obj_t *homeVersionText=nullptr;
+static lv_obj_t *homeSyncText=nullptr;
 static lv_obj_t *nativeDueEdge=nullptr;
 static lv_obj_t *nativeStartupProgressBar=nullptr;
 static bool initAppStorage() ;
@@ -9687,6 +9688,8 @@ void startCalibration(bool fromSettings);
 void exitCalibration(bool saved);
 void processCalibrationPoint(int rawX, int rawY);
 void saveLocalAlarms();
+static void recipeMadeQueueCancelledIfBoth(uint32_t pairId);
+static void saveEditedAlarmImmediately();
 bool loadLocalAlarms();
 bool connectStartupWiFi();
 void performGitHubOTAUpdateCheck();
@@ -9798,6 +9801,7 @@ static const Rect NAV_PREV = {115, 202, 91, 34};
 static const Rect NAV_NEXT = {221, 202, 91, 34};
 // Six alarm cards in 3 rows x 2 columns; bottom row is PAGE/HOME/PREV/NEXT.
 static constexpr int ALARMS_PER_PAGE = 6;
+static constexpr int ALARM_PAIRS_PER_PAGE = 3;
 static const Rect LIST_NAV_PAGE = {6, 181, 74, 55};
 static const Rect LIST_NAV_HOME = {83, 181, 74, 55};
 static const Rect LIST_NAV_PREV = {160, 181, 74, 55};
@@ -9863,7 +9867,7 @@ static const Rect EDIT_DISCARD = {8, 190, 148, 43};
 static const Rect EDIT_SAVE = {164, 190, 148, 43};
 static const Rect CONFIRM_NO = {8, 184, 148, 46};
 static const Rect CONFIRM_YES = {164, 184, 148, 46};
-static const Rect DUE_DONE = {22, 174, 276, 49};
+static const Rect DUE_DONE = {44, 167, 232, 47};
 
 // ---------------------- CACHED GOOGLE SHEETS DATA ------------------
 // The local cache contains only roles="Cook" and InUse="Yes" recipes.
@@ -10119,6 +10123,8 @@ const char *statusText(AlarmStatus s) {
 }
 int sorted[MAX_ALARMS];
 int visibleAlarmCount=0;
+static int pairLeft[MAX_ALARMS],pairRight[MAX_ALARMS],visiblePairCount=0;
+
 int countVisibleAlarms() {
   int n=0;
   for(int i=0;i<alarmCount;i++)
@@ -10137,6 +10143,21 @@ void sortAlarms() {
       sorted[j+1]=sorted[j]; j--;
     }
     sorted[j+1]=value;
+  }
+}
+static void buildVisiblePairs() {
+  sortAlarms();
+  visiblePairCount=0;
+  for(int n=0;n<visibleAlarmCount;n++) {
+    int id=sorted[n], row=-1;const Alarm& a=alarms[id];
+    for(int p=0;p<visiblePairCount;p++) {
+      int existing=pairLeft[p]>=0?pairLeft[p]:pairRight[p];
+      if(existing>=0 && alarms[existing].pairId==a.pairId) {row=p;break;}
+    }
+    if(row<0) {if(visiblePairCount>=MAX_ALARMS)break;
+      row=visiblePairCount++;pairLeft[row]=-1;pairRight[row]=-1;}
+    if(a.stage==1)pairLeft[row]=id;
+    else if(a.stage==2)pairRight[row]=id;
   }
 }
 int nextPending() {
@@ -10178,6 +10199,11 @@ int alarmFirst=0, alarmAnchor=0, alarmPageOffset=0;
 int cookingGuidePage=0;
 int rosterPage=0, recipePage=0, viewRecipePage=0;
 int viewRecipeSelected=-1; // Original cached recipe index, not sorted-list position
+static int alarmAtPairSlot(int slot) {
+  int row=alarmFirst+slot/2;
+  if(row<0||row>=visiblePairCount)return -1;
+  return (slot%2==0)?pairLeft[row]:pairRight[row];
+}
 int selectedAlarm=-1;
 int selectedCook=-1, selectedRecipe=-1; // '-' by default on CREATE
 int rosterBrowseSelected=-1;
@@ -10460,9 +10486,6 @@ void setAlert(bool on) {
   if(alertOn==on) return;
   alertOn=on;
   outputs(on);                    // v1.40: buzzer/LED switch first, exactly on time
-  if(screen==ALARM_DUE) {
-    nativeUpdateDueBorder(on);    // then the small border bars are repainted
-  }
 
 }
 
@@ -10530,12 +10553,13 @@ void goViewAlarms() {
   navDepth=1;navStack[0]=HOME;
   screen=VIEW_ALARMS;
   selectedAlarm=-1;
-  sortAlarms();
+  buildVisiblePairs();
   alarmAnchor=0;alarmPageOffset=0;
   const int next=nextPending();
-  if(next>=0)for(int i=0;i<visibleAlarmCount;i++)if(sorted[i]==next) {
-    alarmAnchor=(i/ALARMS_PER_PAGE)*ALARMS_PER_PAGE;break;
-  }
+  if(next>=0)for(int i=0;i<visiblePairCount;i++)
+    if(pairLeft[i]==next || pairRight[i]==next) {
+      alarmAnchor=(i/ALARM_PAIRS_PER_PAGE)*ALARM_PAIRS_PER_PAGE;break;
+    }
   alarmFirst=alarmAnchor;
   lastActivity=millis();render();
 }
@@ -10609,6 +10633,19 @@ bool clearAllSavedAlarms() {
   Serial.println(empty?"Clear all alarms: NVS verified empty":"WARNING: Alarm erase NOT verified");
   return empty;
 }
+static void saveEditedAlarmImmediately() {
+  if(selectedAlarm<0 || selectedAlarm>=alarmCount) {returnToAlarmList();return;}
+  if(!deviceTestMode && draft.status==AlarmStatus::Pending &&
+     (draft.whenMin<0 || draft.whenMin>LAST_COOK_ALARM_MINUTE)) {
+    Serial.println("Edit time after 10:15 PM blocked in Production");
+    return;
+  }
+  AlarmStatus before=alarms[selectedAlarm].status;
+  alarms[selectedAlarm]=draft;saveLocalAlarms();
+  if(before!=AlarmStatus::Cancelled && draft.status==AlarmStatus::Cancelled)
+    recipeMadeQueueCancelledIfBoth(draft.pairId);
+  returnToAlarmList();
+}
 void yesConfirmation() {
   ConfirmAction action=confirmAction;
   // Universal confirmation: YES executes; NO/timeouts simply goBack().
@@ -10642,18 +10679,12 @@ void yesConfirmation() {
     Serial.println("Pair created and saved locally");
     goHome();
   } else if(action==CA_SAVE_EDIT) {
-    if(selectedAlarm>=0 && selectedAlarm<alarmCount) {
-      // In Production, reject a pending edit to a time later than 10:15 PM.
-      if(!deviceTestMode && draft.status==AlarmStatus::Pending &&
-         (draft.whenMin<0 || draft.whenMin>LAST_COOK_ALARM_MINUTE)) {
-        Serial.println("Edit time after 10:15 PM blocked in Production");
-        goBack();return;
-      }
-      alarms[selectedAlarm]=draft;saveLocalAlarms();
-    }
-    returnToAlarmList();
+    saveEditedAlarmImmediately();
   } else if(action==CA_LIST_CANCEL) {
-    if(selectedAlarm>=0 && selectedAlarm<alarmCount) {alarms[selectedAlarm].status=AlarmStatus::Cancelled;saveLocalAlarms();}
+    if(selectedAlarm>=0 && selectedAlarm<alarmCount) {
+      alarms[selectedAlarm].status=AlarmStatus::Cancelled;saveLocalAlarms();
+      recipeMadeQueueCancelledIfBoth(alarms[selectedAlarm].pairId);
+    }
     returnToAlarmList();
   } else if(action==CA_LIST_PENDING) {
     if(selectedAlarm>=0 && selectedAlarm<alarmCount && !alarmPastDue(alarms[selectedAlarm])) {
@@ -10842,9 +10873,9 @@ static bool isAcceptedButtonTap(int x,int y) {
     case VIEW_ALARMS:
       if(contains(LIST_NAV_HOME,x,y))return true;
       if(contains(LIST_NAV_PREV,x,y))return alarmFirst>0;
-      if(contains(LIST_NAV_NEXT,x,y))return alarmFirst+ALARMS_PER_PAGE<visibleAlarmCount;
+      if(contains(LIST_NAV_NEXT,x,y))return alarmFirst+ALARM_PAIRS_PER_PAGE<visiblePairCount;
       for(int i=0;i<ALARMS_PER_PAGE;i++)if(contains(alarmCardAt(i),x,y))
-        return alarmFirst+i<visibleAlarmCount;
+        return alarmAtPairSlot(i)>=0;
       return false;
     case ALARM_DETAILS:
       return contains(DETAIL_BACK,x,y) ||
@@ -11004,18 +11035,15 @@ void onTap(int x,int y) {
         break;
       }
       if(contains(LIST_NAV_NEXT,x,y)) {
-        if(alarmFirst+ALARMS_PER_PAGE<visibleAlarmCount){alarmPageOffset++;selectedAlarm=-1;render();}
+        if(alarmFirst+ALARM_PAIRS_PER_PAGE<visiblePairCount){alarmPageOffset++;selectedAlarm=-1;render();}
         break;
       }
       for(int slot=0;slot<ALARMS_PER_PAGE;slot++) {
         if(!contains(alarmCardAt(slot),x,y))continue;
-        const int p=alarmFirst+slot;
-        sortAlarms();
-        if(p<visibleAlarmCount) {
-          selectedAlarm=sorted[p];
-          detailPreviewStatus=alarms[selectedAlarm].status;
-          detailPreviewChanged=false;
-          pushScreen(ALARM_DETAILS);
+        int id=alarmAtPairSlot(slot);
+        if(id>=0) {
+          selectedAlarm=id;detailPreviewStatus=alarms[id].status;
+          detailPreviewChanged=false;pushScreen(ALARM_DETAILS);
         }
         break;
       }
@@ -11161,7 +11189,7 @@ void onTap(int x,int y) {
     }
     case EDIT_ALARM: {
       if(contains(EDIT_DISCARD,x,y))goViewAlarms();
-      else if(contains(EDIT_SAVE,x,y))confirm(CA_SAVE_EDIT);
+      else if(contains(EDIT_SAVE,x,y))saveEditedAlarmImmediately();
       else if(contains(EDIT_COOK,x,y)) {
         rosterForEdit=true;rosterForCreate=false;rosterPage=0;selectCookPrepare();pushScreen(VIEW_ROSTER);
       } else if(contains(EDIT_CLOCK,x,y))enterTimeEditor(draft.stage,false);
@@ -12736,7 +12764,7 @@ static void nbase(bool withHeader=true) {
   if(!nativeRoot)return;
   lv_obj_clean(nativeRoot);
   nativeHeaderText=nullptr;nativeDueEdge=nullptr;nativeStartupProgressBar=nullptr;
-  homeDateText=nullptr;homeClockText=nullptr;homeVersionText=nullptr;
+  homeDateText=nullptr;homeClockText=nullptr;homeVersionText=nullptr;homeSyncText=nullptr;
   const bool blackApproved=(screen==CREATE_ALARM || screen==EDIT_TIME ||
        screen==RECIPE_OPTIONS || screen==VIEW_RECIPES || screen==CONFIRMATION || (screen==VIEW_ROSTER && (rosterForCreate || rosterForEdit)));
   lv_obj_set_style_bg_color(nativeRoot,blackApproved?lv_color_black():nativeColor(NAVY),0);
@@ -12860,35 +12888,57 @@ static lv_obj_t* homeLabel(const String &value,int x,int y,int w,int h,
   lv_label_set_text(label,value.c_str());
   return label;
 }
-static uint16_t homeUtf8Chars(const String& s) {
-  uint16_t n=0;
-  for(size_t i=0;i<s.length();++i)
-    if((((uint8_t)s[i])&0xC0)!=0x80)++n;
-  return n;
+
+static lv_coord_t homeMeasuredWidth(const String& s,const lv_font_t* font) {
+  return lv_txt_get_width(s.c_str(),s.length(),font,0,LV_TEXT_FLAG_NONE);
+}
+static const lv_font_t* homeBestFont(const String& s,int maxWidth) {
+  static const lv_font_t* fonts[]={&cool_mono_bold_32,&cool_mono_bold_28,
+    &cool_mono_bold_24,&cool_mono_bold_20,&cool_mono_regular_18};
+  for(const lv_font_t* f:fonts)
+    if(homeMeasuredWidth(s,f)<=maxWidth)return f;
+  return nullptr;
 }
 static void homeAutoFit(const String& value,int y,int h) {
-  // Fonts share the same DejaVu Sans Mono cell width at each size.
-  // First select the largest font with an entire single line in 456px.
-  static const lv_font_t* choices[] = {
-    &cool_mono_bold_32,&cool_mono_bold_28,&cool_mono_bold_24,
-    &cool_mono_bold_20,&cool_mono_regular_18
-  };
-  static const uint8_t cellPixels[] = {20,17,15,13,11};
   const int maxW=456;
-  const uint16_t glyphs=homeUtf8Chars(value);
-  const lv_font_t* selected=choices[4];
-  bool fitsOneLine=false;
-  for(int i=0;i<5;i++) {
-    if((uint32_t)glyphs*cellPixels[i] <= (uint32_t)maxW) {
-      selected=choices[i]; fitsOneLine=true; break;
+  const lv_font_t* f=homeBestFont(value,maxW-6);
+  if(f) {
+    int top=y+(h-f->line_height)/2;
+    homeLabel(value,12,top,maxW,f->line_height+2,f,LV_TEXT_ALIGN_CENTER,false);
+    return;
+  }
+  // Only wrap after every single-line font is too large. Minimum is 18px.
+  f=&cool_mono_regular_18;
+  String lines=value;int balance=2147483647;
+  for(int i=1;i<(int)value.length()-1;i++)if(value[i]==' ') {
+    String first=value.substring(0,i),second=value.substring(i+1);
+    int w1=homeMeasuredWidth(first,f),w2=homeMeasuredWidth(second,f);
+    if(w1<=maxW-6 && w2<=maxW-6 && abs(w1-w2)<balance) {
+      balance=abs(w1-w2);lines=first+"\n"+second;
     }
   }
-  const int lines=fitsOneLine?1:2;
-  const int lineH=selected->line_height;
-  const int actualH=(h<lines*lineH ? h : lines*lineH);
-  int top=y+(h-actualH)/2;
-  if(top<y)top=y;
-  homeLabel(value,12,top,maxW,actualH,selected,LV_TEXT_ALIGN_CENTER,!fitsOneLine);
+  int top=y+max(0,(h-2*f->line_height)/2);
+  homeLabel(lines,12,top,maxW,min(h,2*f->line_height+2),
+            f,LV_TEXT_ALIGN_CENTER,true); // Ellipsis only if even two lines overflow.
+}
+static void homeAlarmAutoFit(const Alarm& a,int y,int h) {
+  String prefix=String("c")+String(a.stage)+" "+homeAlarmTime(a.whenMin)+" ";
+  String name=homeCookName(a.initials);
+  const lv_font_t* f=homeBestFont(prefix+name,450);
+  if(f) {
+    int p=homeMeasuredWidth(prefix,f),n=homeMeasuredWidth(name,f);
+    int x=(PANEL_W-p-n)/2,top=y+(h-f->line_height)/2;
+    homeLabel(prefix,x,top,p+2,f->line_height+2,f,LV_TEXT_ALIGN_LEFT,false);
+    lv_obj_t* cook=homeLabel(name,x+p,top,n+3,f->line_height+2,f,LV_TEXT_ALIGN_LEFT,false);
+    lv_obj_set_style_text_decor(cook,LV_TEXT_DECOR_UNDERLINE,0);
+  } else {
+    f=&cool_mono_regular_18;
+    int top=y+max(0,(h-2*f->line_height)/2);
+    homeLabel(prefix,12,top,456,f->line_height+1,f,LV_TEXT_ALIGN_CENTER,false);
+    lv_obj_t* cook=homeLabel(name,12,top+f->line_height,456,f->line_height+1,
+                             f,LV_TEXT_ALIGN_CENTER,false);
+    lv_obj_set_style_text_decor(cook,LV_TEXT_DECOR_UNDERLINE,0);
+  }
 }
 static void uiLargeButton(Rect logical,const String& caption,uint16_t bg,
                           uint16_t border,bool enabled,int maxLines) {
@@ -12946,25 +12996,7 @@ static void homeRefreshClockAndDate() {
 static void nativeRefreshHeader(){
   homeRefreshClockAndDate(); // same fixed date/time/version header on all eligible screens
 }
-// v1.40: the border is four thin bar objects inside a transparent holder.
-// Changing the border width of one full-size object (v1.39) invalidated the
-// whole area below the header, so every chirp repainted ~136,000 pixels in
-// 12-line strips: a visible top-to-bottom "wave" that also blocked loop()
-// long enough to stretch the chirps. Showing/hiding the bars invalidates
-// only the bars (~18,000 pixels), and lv_refr_now() paints them at once so
-// the border stays in step with the buzzer instead of waiting for the next
-// 30 ms LVGL refresh period.
-static void nativeUpdateDueBorder(bool active) {
-  if(!nativeDueEdge)return;
-  const uint32_t bars=lv_obj_get_child_cnt(nativeDueEdge);
-  for(uint32_t i=0;i<bars;i++) {
-    lv_obj_t *bar=lv_obj_get_child(nativeDueEdge,(int32_t)i);
-    if(active)lv_obj_clear_flag(bar,LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(bar,LV_OBJ_FLAG_HIDDEN);
-  }
-  if(lvReady && !lvInsideHandler)lv_refr_now(nullptr);
-}
-// Startup status screens are replaced by a persistent scrolling log.
+// Static due border: no LVGL invalidation on buzzer transitions.\n// Startup status screens are replaced by a persistent scrolling log.
 static void nativeStartupMessage(const String&,const String&,const String&) {
   bootLogShow(true);
 }
@@ -12986,8 +13018,7 @@ static void nativeRender(){
       const int idx=nextPending();
       if(idx>=0) {
         const Alarm& a=alarms[idx];
-        homeAutoFit(String("c")+String(a.stage)+" "+homeAlarmTime(a.whenMin)+" "+
-                    homeCookName(a.initials),53,49);
+        homeAlarmAutoFit(a,53,49);
         homeAutoFit(String(a.recipe),109,49);
       }
       // No pending alarms: keep the two information rows completely blank.
@@ -13031,30 +13062,32 @@ static void nativeRender(){
       break;
     }
     case VIEW_ALARMS: {
-      sortAlarms();
-      const int last=visibleAlarmCount?((visibleAlarmCount-1)/ALARMS_PER_PAGE)*ALARMS_PER_PAGE:0;
-      alarmFirst=constrain(alarmAnchor+ALARMS_PER_PAGE*alarmPageOffset,0,last);
-      const int pages=max(1,(visibleAlarmCount+ALARMS_PER_PAGE-1)/ALARMS_PER_PAGE);
-      const int page=alarmFirst/ALARMS_PER_PAGE;
-      // No VIEW ALARMS title; six 2-line cards start immediately below header.
-      for(int slot=0;slot<ALARMS_PER_PAGE;slot++) {
-        const int p=alarmFirst+slot;
-        if(p>=visibleAlarmCount)break;
-        const Alarm &a=alarms[sorted[p]];
-        const uint16_t bg=a.status==AlarmStatus::Done?GREEN:a.status==AlarmStatus::Pending?(sorted[p]==nextPending()?RED:YELLOW):GREY;
-        const uint16_t fg=bg==YELLOW?BLACK:WHITE;
-        const Rect card=alarmCardAt(slot);
-        ntile(card,bg,sorted[p]==selectedAlarm?TEAL:DIM,4);
-        ntext(String("c")+String(a.stage)+" "+homeAlarmTime(a.whenMin)+" "+
-              alarmFirstCookName(a.initials),{card.x+4,card.y+3,card.w-8,20},fg);
-        ntext(String(a.recipe),{card.x+4,card.y+23,card.w-8,19},fg);
+      buildVisiblePairs();
+      int last=visiblePairCount?((visiblePairCount-1)/ALARM_PAIRS_PER_PAGE)*ALARM_PAIRS_PER_PAGE:0;
+      alarmFirst=constrain(alarmAnchor+ALARM_PAIRS_PER_PAGE*alarmPageOffset,0,last);
+      int pages=max(1,(visiblePairCount+ALARM_PAIRS_PER_PAGE-1)/ALARM_PAIRS_PER_PAGE);
+      int page=alarmFirst/ALARM_PAIRS_PER_PAGE;
+      for(int row=0;row<ALARM_PAIRS_PER_PAGE;row++) {
+        if(alarmFirst+row>=visiblePairCount)break;
+        for(int stage=0;stage<2;stage++) {
+          int id=(stage==0?pairLeft[alarmFirst+row]:pairRight[alarmFirst+row]);
+          if(id<0)continue; // Cancelled stage remains an empty slot.
+          const Alarm& a=alarms[id];
+          uint16_t bg=a.status==AlarmStatus::Done?GREEN:(id==nextPending()?RED:YELLOW);
+          uint16_t fg=bg==YELLOW?BLACK:WHITE;
+          Rect card=alarmCardAt(row*2+stage);
+          ntile(card,bg,id==selectedAlarm?TEAL:DIM,4);
+          ntext(String("c")+String(a.stage)+" "+homeAlarmTime(a.whenMin)+" "+
+                alarmFirstCookName(a.initials),{card.x+4,card.y+3,card.w-8,20},fg);
+          ntext(String(a.recipe),{card.x+4,card.y+23,card.w-8,19},fg);
+        }
       }
       ntile(LIST_NAV_PAGE,PANEL,0,5);
       ntext(String(page+1)+" / "+String(pages),
             {LIST_NAV_PAGE.x+3,LIST_NAV_PAGE.y+16,LIST_NAV_PAGE.w-6,27},WHITE,true);
       nbutton(LIST_NAV_HOME,"HOME",YELLOW,BLACK);
       nbutton(LIST_NAV_PREV,"PREV",BLUE,WHITE,alarmFirst>0);
-      nbutton(LIST_NAV_NEXT,"NEXT",BLUE,WHITE,alarmFirst+ALARMS_PER_PAGE<visibleAlarmCount);
+      nbutton(LIST_NAV_NEXT,"NEXT",BLUE,WHITE,alarmFirst+ALARM_PAIRS_PER_PAGE<visiblePairCount);
       break;
     }
     case ALARM_DETAILS: {
@@ -13245,42 +13278,20 @@ static void nativeRender(){
     }
     case ALARM_DUE: {
       if(dueAlarm<0||dueAlarm>=alarmCount)break;
-      const Alarm &a=alarms[dueAlarm];
-      ntile({25,51,270,44},DUE_DARK);
-      nline("ALARM DUE",61,WHITE,28);
-      nline(String(a.initials)+" "+clockHHMM(a.whenMin)+" c"+String(a.stage),113);
-      nline(String(a.recipe),153,TEAL,29);
-      nbutton(DUE_DONE,"DONE",GREEN);
+      const Alarm& a=alarms[dueAlarm];
+      homeAlarmAutoFit(a,53,49);
+      homeAutoFit(String(a.recipe),109,49);
+      homeButton(DUE_DONE,"DONE",lv_color_make(87,199,90),true);
       nativeDueEdge=lv_obj_create(nativeRoot);
       lv_obj_set_pos(nativeDueEdge,0,ny(28));
       lv_obj_set_size(nativeDueEdge,PANEL_W,PANEL_H-ny(28));
       lv_obj_set_style_bg_opa(nativeDueEdge,LV_OPA_TRANSP,0);
-      lv_obj_set_style_border_width(nativeDueEdge,0,0);
+      lv_obj_set_style_border_color(nativeDueEdge,nativeColor(RED),0);
+      lv_obj_set_style_border_width(nativeDueEdge,nx(8),0);
       lv_obj_set_style_radius(nativeDueEdge,0,0);
       lv_obj_set_style_pad_all(nativeDueEdge,0,0);
       lv_obj_clear_flag(nativeDueEdge,LV_OBJ_FLAG_CLICKABLE);
       lv_obj_clear_flag(nativeDueEdge,LV_OBJ_FLAG_SCROLLABLE);
-      {
-        // Same 8-unit red border as v1.39, built from four bars:
-        // top, bottom, left, right (side bars fit between top and bottom).
-        const lv_coord_t t=nx(8),w=PANEL_W,h=PANEL_H-ny(28);
-        const lv_area_t bars[4]={{0,0,w,t},{0,(lv_coord_t)(h-t),w,t},
-                                 {0,t,t,(lv_coord_t)(h-2*t)},
-                                 {(lv_coord_t)(w-t),t,t,(lv_coord_t)(h-2*t)}}; // x,y,width,height
-        for(int i=0;i<4;i++) {
-          lv_obj_t *bar=lv_obj_create(nativeDueEdge);
-          lv_obj_set_pos(bar,bars[i].x1,bars[i].y1);
-          lv_obj_set_size(bar,bars[i].x2,bars[i].y2);
-          lv_obj_set_style_bg_color(bar,nativeColor(RED),0);
-          lv_obj_set_style_bg_opa(bar,LV_OPA_COVER,0);
-          lv_obj_set_style_border_width(bar,0,0);
-          lv_obj_set_style_radius(bar,0,0);
-          lv_obj_set_style_pad_all(bar,0,0);
-          lv_obj_clear_flag(bar,LV_OBJ_FLAG_CLICKABLE);
-          lv_obj_clear_flag(bar,LV_OBJ_FLAG_SCROLLABLE);
-          if(!alertOn)lv_obj_add_flag(bar,LV_OBJ_FLAG_HIDDEN);
-        }
-      }
       break;
     }
     case COOLING_INFO: {
