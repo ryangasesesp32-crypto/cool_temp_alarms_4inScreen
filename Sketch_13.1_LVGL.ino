@@ -9485,8 +9485,8 @@ static StartupSerialMirror startupSerial(Serial);
 // PUBLIC OTA-SAFE build. Wi-Fi credentials and Apps Script token remain in
 // device Preferences (NVS), provisioned by the earlier v1.14 USB build.
 // Do not embed or publish private credentials in this source or binary.
-static const char* FIRMWARE_VERSION = "v1.43"; // Freenove-only OTA version; original alarm logic remains v1.31
-static const char* FREENOVE_BUILD_ID = "LVGL-F4-RecipesMadeStatus-v1.43";
+static const char* FIRMWARE_VERSION = "v1.44"; // Freenove-only OTA version; original alarm logic remains v1.31
+static const char* FREENOVE_BUILD_ID = "LVGL-F4-BreakLogReliableHTTP-v1.44";
 static const char* GITHUB_OTA_MANIFEST_URL = "https://raw.githubusercontent.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/main/firmware.json";
 // SAFETY: do not point this board at the ELEGOO production manifest.
 // The Freenove manifest may point to a staged draft release; OTA download will
@@ -12265,74 +12265,75 @@ void startupLogBegin() {
 // POST once; Google Apps Script may reply with a ContentService redirect.
 // Retry only the REDIRECT GET with fresh TLS sockets, never repeat the POST
 // in the same attempt. The durable EntryID allows safe later POST retries.
+// Transport shared by startup diagnostics and RecipesMade.
+// Proven Break Log pattern: POST WITHOUT following redirects, fully close it,
+// then use a fresh GET with strict redirect following (no POST headers retained).
+// One attempt here; callers handle full, idempotent POST retries as needed.
 bool diagPOSTOnce(const String& body, String& reply, String& failure) {
   reply="";failure="";
   if(WiFi.status()!=WL_CONNECTED){failure="NO WIFI";return false;}
   String redirect;
   {
-    WiFiClientSecure client;client.setInsecure();client.setTimeout(20000);
-    HTTPClient http;
-    http.setReuse(false);
-    http.setConnectTimeout(20000);http.setTimeout(20000);
-    const char* headers[]={"Location"};http.collectHeaders(headers,1);
-    if(!http.begin(client,GOOGLE_SCRIPT_URL)){failure="POST BEGIN FAILED";return false;}
-    http.addHeader("Content-Type","application/json");
-    int status=http.POST(body);
+    WiFiClientSecure postClient;postClient.setInsecure();postClient.setTimeout(20000);
+    HTTPClient postHttp;
+    postHttp.setReuse(false);
+    postHttp.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+    postHttp.setConnectTimeout(20000);postHttp.setTimeout(20000);
+    const char* headers[]={"Location"};postHttp.collectHeaders(headers,1);
+    if(!postHttp.begin(postClient,GOOGLE_SCRIPT_URL)){
+      failure="POST BEGIN FAILED";return false;
+    }
+    postHttp.addHeader("Content-Type","application/json");
+    int status=postHttp.POST(body);
     if(status==HTTP_CODE_OK) {
-      reply=http.getString();http.end();
+      reply=postHttp.getString();postHttp.end();
       String trimmed=reply;trimmed.trim();
       if(!trimmed.startsWith("{")){failure="POST HTTP200 NON-JSON";return false;}
       return true;
     }
     if(status!=301 && status!=302 && status!=303 && status!=307 && status!=308) {
-      failure="POST HTTP="+String(status);http.end();return false;
+      failure="POST HTTP="+String(status);
+      if(status<0)failure+=" "+HTTPClient::errorToString(status);
+      postHttp.end();return false;
     }
-    redirect=http.header("Location");http.end();
+    redirect=postHttp.header("Location");
+    redirect.trim();
+    postHttp.end();
   }
-  // Never log the redirect URL; Google may embed an ephemeral access token.
+  // A single POST may already have written to Sheets: never claim failure
+  // means no server write. Do not log the token-bearing Google redirect URL.
   if(!redirect.startsWith("https://script.googleusercontent.com/")) {
     failure="POST REDIRECT HOST UNEXPECTED";return false;
   }
-  const uint8_t REDIRECT_ATTEMPTS=3;
-  for(uint8_t attempt=1;attempt<=REDIRECT_ATTEMPTS;attempt++) {
-    if(WiFi.status()!=WL_CONNECTED) {
-      failure="REDIRECT WIFI DISCONNECTED";return false;
-    }
-    int status=0;
-    {
-      // A new TLS client on every attempt avoids reusing a broken connection.
-      WiFiClientSecure client;client.setInsecure();client.setTimeout(20000);
-      HTTPClient http;
-      http.setReuse(false);
-      http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
-      http.setConnectTimeout(20000);http.setTimeout(20000);
-      if(!http.begin(client,redirect)) {
-        failure="REDIRECT BEGIN FAILED";
-        status=0;
-      } else {
-        status=http.GET();
-        if(status==HTTP_CODE_OK) {
-          reply=http.getString();
-          String trimmed=reply;trimmed.trim();
-          if(trimmed.startsWith("{")) {
-            http.end();
-            return true;
-          }
-          failure="REDIRECT NON-JSON";
-        } else {
-          failure="REDIRECT HTTP="+String(status);
-        }
-        http.end();
-      }
-    }
-    Serial.printf("[MADE] Redirect read %u/%u failed (%d), wifi=%d, heap=%u, maxAlloc=%u\n",
-      (unsigned)attempt,(unsigned)REDIRECT_ATTEMPTS,status,
-      (int)WiFi.status(),(unsigned)ESP.getFreeHeap(),
-      (unsigned)ESP.getMaxAllocHeap());
-    if(attempt<REDIRECT_ATTEMPTS)
-      vTaskDelay(pdMS_TO_TICKS(350U*attempt));
+  if(WiFi.status()!=WL_CONNECTED){failure="REDIRECT WIFI DISCONNECTED";return false;}
+
+  WiFiClientSecure getClient;getClient.setInsecure();getClient.setTimeout(20000);
+  HTTPClient getHttp;
+  getHttp.setReuse(false);
+  // Match the working Break Log redirect GET. If Google sends another
+  // redirect, GET-to-GET following is permitted and preserves no POST headers.
+  getHttp.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  getHttp.setConnectTimeout(20000);getHttp.setTimeout(20000);
+  Serial.printf("[HTTP] Redirect GET start: wifi=%d, rssi=%d, heap=%u, maxAlloc=%u\n",
+    (int)WiFi.status(),(int)WiFi.RSSI(),
+    (unsigned)ESP.getFreeHeap(),(unsigned)ESP.getMaxAllocHeap());
+  if(!getHttp.begin(getClient,redirect)){
+    failure="REDIRECT BEGIN FAILED";return false;
   }
-  return false;
+  int status=getHttp.GET();
+  if(status!=HTTP_CODE_OK) {
+    failure="REDIRECT HTTP="+String(status);
+    if(status<0)failure+=" "+HTTPClient::errorToString(status);
+    getHttp.end();
+    Serial.printf("[HTTP] Redirect failed: status=%d, wifi=%d, heap=%u, maxAlloc=%u\n",
+      status,(int)WiFi.status(),(unsigned)ESP.getFreeHeap(),
+      (unsigned)ESP.getMaxAllocHeap());
+    return false;
+  }
+  reply=getHttp.getString();getHttp.end();
+  String trimmed=reply;trimmed.trim();
+  if(!trimmed.startsWith("{")){failure="REDIRECT NON-JSON";return false;}
+  return true;
 }
 
 // ------------------- RecipesMade background sync -------------------
@@ -12587,6 +12588,24 @@ static void madeRadioOff(){
     WiFi.mode(WIFI_OFF);
   }
 }
+// Break Log pattern: if the server processed POST but its redirect GET failed,
+// resend the SAME immutable EntryID once. Apps Script handles duplicate IDs.
+// The background task retains the LittleFS record until an explicit ACK.
+static bool madePostWithRetry(const String& body,String& reply,String& error) {
+  for(int attempt=1;attempt<=2;attempt++) {
+    reply="";error="";
+    if(diagPOSTOnce(body,reply,error)) {
+      if(attempt>1)Serial.println("[MADE] Full POST retry succeeded");
+      return true;
+    }
+    Serial.printf("[MADE] HTTP attempt %d/2 failed: %s; wifi=%d, rssi=%d, heap=%u, maxAlloc=%u\n",
+      attempt,error.c_str(),(int)WiFi.status(),(int)WiFi.RSSI(),
+      (unsigned)ESP.getFreeHeap(),(unsigned)ESP.getMaxAllocHeap());
+    if(attempt==2 || WiFi.status()!=WL_CONNECTED)break;
+    vTaskDelay(pdMS_TO_TICKS(500)); // Matches the proven Break Log full-POST retry.
+  }
+  return false;
+}
 static void madeWorker(void*) {
   uint32_t last=millis();
   static constexpr int MAX_MADE_BATCH=32;
@@ -12598,8 +12617,7 @@ static void madeWorker(void*) {
     String entries[MAX_MADE_BATCH];
     const int count=madeCollectPending(entries,MAX_MADE_BATCH);
     if(count==0) {
-      // Empty upload queue must always render a blank status indicator.
-      madeSyncPhase=MADE_IDLE;
+      madeSyncPhase=MADE_IDLE; // Blank when no locally pending records remain.
       continue;
     }
     if(count<0) {
@@ -12615,46 +12633,52 @@ static void madeWorker(void*) {
       Serial.println("[MADE] Offline/token unavailable; all records retained");
       continue;
     }
-    bool hadFailure=false,uploaded=false;
+
+    bool hadFailure=false,uploaded=false,radioLost=false;
     int attempted=0,acknowledged=0;
-    // Process each queued EntryID ONCE per Wi-Fi session, even if an earlier
-    // redirect/ack fails. Any unacknowledged record remains on LittleFS.
+    // Process each pending EntryID at most once per session (plus one FULL
+    // POST retry). One failure cannot starve later entries while Wi-Fi works.
     for(int i=0;i<count;i++) {
       String body,status;
       if(!madePayloadForPath(entries[i],body,status))continue;
       attempted++;
-      String reply,error;
-      if(!diagPOSTOnce(body,reply,error)) {
-        Serial.printf("[MADE] Upload failed: %s; wifi=%d, heap=%u, maxAlloc=%u\n",
-          error.c_str(),(int)WiFi.status(),
-          (unsigned)ESP.getFreeHeap(),(unsigned)ESP.getMaxAllocHeap());
-        hadFailure=true;
-        if(WiFi.status()!=WL_CONNECTED)break;
-        continue;
-      }
-      DynamicJsonDocument ack(512),sent(1500);
-      if(deserializeJson(ack,reply) || deserializeJson(sent,body) ||
-         !(ack["success"]|false) ||
-         String((const char*)(ack["entryID"]|"")) !=
-           String((const char*)(sent["entryID"]|"")) ||
-         String((const char*)(ack["entryStatus"]|""))!=status) {
-        Serial.println("[MADE] Invalid or mismatched Apps Script acknowledgment");
-        hadFailure=true;continue;
-      }
-      if(!madeAcknowledge(entries[i],status)) {
-        // A cancellation during upload must stay queued for the next session.
-        Serial.println("[MADE] Entry changed during upload or LittleFS ack failed");
-        hadFailure=true;continue;
-      }
-      uploaded=true;acknowledged++;
-      Serial.println("[MADE] EntryID acknowledged");
-      vTaskDelay(pdMS_TO_TICKS(25));
+      do {
+        String reply,error;
+        if(!madePostWithRetry(body,reply,error)) {
+          hadFailure=true;
+          Serial.printf("[MADE] Upload failed after full retry: %s\n",error.c_str());
+          break;
+        }
+        // JSON ACK allocations are created only AFTER HTTPS is finished.
+        DynamicJsonDocument ack(512);
+        DynamicJsonDocument sent(1500);
+        if(deserializeJson(ack,reply) || deserializeJson(sent,body) ||
+           !(ack["success"]|false) ||
+           String((const char*)(ack["entryID"]|"")) !=
+             String((const char*)(sent["entryID"]|"")) ||
+           String((const char*)(ack["entryStatus"]|""))!=status) {
+          // Never clear an unverified local record. On a later retry the
+          // Apps Script's EntryID deduplication accepts existing rows.
+          Serial.println("[MADE] Invalid, failed or mismatched EntryID/status ACK");
+          hadFailure=true;break;
+        }
+        if(!madeAcknowledge(entries[i],status)) {
+          Serial.println("[MADE] Entry changed during upload or LittleFS ACK failed");
+          hadFailure=true;break;
+        }
+        uploaded=true;acknowledged++;
+        Serial.println("[MADE] EntryID acknowledged; local dirty=false");
+      } while(false);
+
+      if(WiFi.status()!=WL_CONNECTED){radioLost=true;hadFailure=true;break;}
+      // Proven Break Log v1.49 pacing: prevent back-to-back Google requests.
+      if(i+1<count)vTaskDelay(pdMS_TO_TICKS(1000));
     }
-    madeRadioOff(); // Always release Wi-Fi, regardless of failures.
+    madeRadioOff();
     String pending,body,status;
     const bool stillPending=madeNextPending(pending,body,status);
-    Serial.printf("[MADE] Session finished: attempted=%d acknowledged=%d pending=%s\n",
-      attempted,acknowledged,stillPending?"YES":"NO");
+    Serial.printf("[MADE] Session finished: attempted=%d acknowledged=%d pending=%s wifiLost=%s\n",
+      attempted,acknowledged,stillPending?"YES":"NO",radioLost?"YES":"NO");
     if(!stillPending) {
       if(uploaded) {
         madeSuccessAtMs=millis();
