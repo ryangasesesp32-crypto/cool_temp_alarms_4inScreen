@@ -1,0 +1,30 @@
+name: Create Freenove v1.43 draft release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-v1-43-draft-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stage v1.43 firmware release for manual binary upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "freenove-v1.43" >/dev/null 2>&1; then
+            echo "Existing v1.43 release retained"
+          else
+            gh release create "freenove-v1.43" \
+              --target main \
+              --title "Freenove Cooling Alarm v1.43 — RecipesMade Status Indicators" \
+              --notes "v1.43 updates the Freenove Cooling Alarm HOME upload status markers: Q=queued in yellow, UP=uploading in green, F=upload/acknowledgment failed in red, and blank=empty local queue. It removes the previous OK and ! markers. Existing alarm UI, buzzer, scheduling and RecipesMade upload logic are unchanged. IMPORTANT: The Google Apps Script redirect acknowledgment failure is NOT fixed; records may be present in Google Sheets yet still show F until acknowledged by the ESP32. Preserve LittleFS queue records. Compile the exact v1.43 Sketch_13.1_LVGL.ino source, upload Sketch_13.1_LVGL.ino.bin to this draft release, test the build and only then publish. Manifest target: firmware.json v1.43. BINARY NOT ATTACHED; NOT HARDWARE-VALIDATED." \
+              --draft
+          fi
