@@ -9485,8 +9485,8 @@ static StartupSerialMirror startupSerial(Serial);
 // PUBLIC OTA-SAFE build. Wi-Fi credentials and Apps Script token remain in
 // device Preferences (NVS), provisioned by the earlier v1.14 USB build.
 // Do not embed or publish private credentials in this source or binary.
-static const char* FIRMWARE_VERSION = "v1.41"; // Freenove-only OTA version; original alarm logic remains v1.31
-static const char* FREENOVE_BUILD_ID = "LVGL-F4-PairedAlarms-RecipesMade-v1.41";
+static const char* FIRMWARE_VERSION = "v1.42"; // Freenove-only OTA version; original alarm logic remains v1.31
+static const char* FREENOVE_BUILD_ID = "LVGL-F4-RecipesMadeReliableSync-v1.42";
 static const char* GITHUB_OTA_MANIFEST_URL = "https://raw.githubusercontent.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/main/firmware.json";
 // SAFETY: do not point this board at the ELEGOO production manifest.
 // The Freenove manifest may point to a staged draft release; OTA download will
@@ -12262,10 +12262,9 @@ void startupLogBegin() {
   startupLogAdd("Free Heap at Boot: " + String((unsigned int)ESP.getFreeHeap()));
   startupLogAdd(String("LittleFS: ") + (fsReady?"OK":"UNAVAILABLE"));
 }
-// Exact Break Log transport: send POST without redirect following, then
-// close it and use a separate GET to the Google ContentService redirect.
-// Retry once; do not repeat a successful server write on acknowledgement loss
-// without StartupID deduplication (the Apps Script performs that check).
+// POST once; Google Apps Script may reply with a ContentService redirect.
+// Retry only the REDIRECT GET with fresh TLS sockets, never repeat the POST
+// in the same attempt. The durable EntryID allows safe later POST retries.
 bool diagPOSTOnce(const String& body, String& reply, String& failure) {
   reply="";failure="";
   if(WiFi.status()!=WL_CONNECTED){failure="NO WIFI";return false;}
@@ -12273,6 +12272,7 @@ bool diagPOSTOnce(const String& body, String& reply, String& failure) {
   {
     WiFiClientSecure client;client.setInsecure();client.setTimeout(20000);
     HTTPClient http;
+    http.setReuse(false);
     http.setConnectTimeout(20000);http.setTimeout(20000);
     const char* headers[]={"Location"};http.collectHeaders(headers,1);
     if(!http.begin(client,GOOGLE_SCRIPT_URL)){failure="POST BEGIN FAILED";return false;}
@@ -12289,21 +12289,50 @@ bool diagPOSTOnce(const String& body, String& reply, String& failure) {
     }
     redirect=http.header("Location");http.end();
   }
-  // Never log redirect URL: it can contain single-use Google query tokens.
+  // Never log the redirect URL; Google may embed an ephemeral access token.
   if(!redirect.startsWith("https://script.googleusercontent.com/")) {
     failure="POST REDIRECT HOST UNEXPECTED";return false;
   }
-  WiFiClientSecure client;client.setInsecure();client.setTimeout(20000);
-  HTTPClient http;
-  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  http.setConnectTimeout(20000);http.setTimeout(20000);
-  if(!http.begin(client,redirect)){failure="REDIRECT BEGIN FAILED";return false;}
-  int status=http.GET();
-  if(status!=HTTP_CODE_OK){failure="REDIRECT HTTP="+String(status);http.end();return false;}
-  reply=http.getString();http.end();
-  String trimmed=reply;trimmed.trim();
-  if(!trimmed.startsWith("{")){failure="REDIRECT NON-JSON";return false;}
-  return true;
+  const uint8_t REDIRECT_ATTEMPTS=3;
+  for(uint8_t attempt=1;attempt<=REDIRECT_ATTEMPTS;attempt++) {
+    if(WiFi.status()!=WL_CONNECTED) {
+      failure="REDIRECT WIFI DISCONNECTED";return false;
+    }
+    int status=0;
+    {
+      // A new TLS client on every attempt avoids reusing a broken connection.
+      WiFiClientSecure client;client.setInsecure();client.setTimeout(20000);
+      HTTPClient http;
+      http.setReuse(false);
+      http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+      http.setConnectTimeout(20000);http.setTimeout(20000);
+      if(!http.begin(client,redirect)) {
+        failure="REDIRECT BEGIN FAILED";
+        status=0;
+      } else {
+        status=http.GET();
+        if(status==HTTP_CODE_OK) {
+          reply=http.getString();
+          String trimmed=reply;trimmed.trim();
+          if(trimmed.startsWith("{")) {
+            http.end();
+            return true;
+          }
+          failure="REDIRECT NON-JSON";
+        } else {
+          failure="REDIRECT HTTP="+String(status);
+        }
+        http.end();
+      }
+    }
+    Serial.printf("[MADE] Redirect read %u/%u failed (%d), wifi=%d, heap=%u, maxAlloc=%u\n",
+      (unsigned)attempt,(unsigned)REDIRECT_ATTEMPTS,status,
+      (int)WiFi.status(),(unsigned)ESP.getFreeHeap(),
+      (unsigned)ESP.getMaxAllocHeap());
+    if(attempt<REDIRECT_ATTEMPTS)
+      vTaskDelay(pdMS_TO_TICKS(350U*attempt));
+  }
+  return false;
 }
 
 // ------------------- RecipesMade background sync -------------------
@@ -12313,6 +12342,14 @@ bool diagPOSTOnce(const String& body, String& reply, String& failure) {
 static bool madeIsFile(const String& path) {
   return (path.startsWith("/rm_")||path.startsWith("rm_")) &&
          path.endsWith(".json");
+}
+// On ESP32 File.name() may omit the leading slash; always persist and reopen
+// queue entries by their absolute LittleFS path, including pre-v1.42 entries.
+static String madeFilePath(fs::File& file) {
+  String result=file.path();
+  if(result.isEmpty())result=file.name();
+  if(!result.startsWith("/"))result="/"+result;
+  return result;
 }
 static bool madeLock() {
   return fsReady && madeMutex &&
@@ -12347,7 +12384,7 @@ static void madeRecover() {
   if(root) {
     fs::File f=root.openNextFile();
     while(f) {
-      String name=f.name();f.close();
+      String name=madeFilePath(f);f.close();
       if(name.endsWith(".json.bak") || name.endsWith(".json.tmp")) {
         String original=name.substring(0,name.length()-4);
         if(!LittleFS.exists(original))LittleFS.rename(name,original);
@@ -12406,7 +12443,7 @@ static void recipeMadeQueueCancelledIfBoth(uint32_t pairId) {
   if(root) {
     fs::File f=root.openNextFile();
     while(f) {
-      String path=f.name();
+      String path=madeFilePath(f);
       if(madeIsFile(path)){
         DynamicJsonDocument row(1100);
         if(!deserializeJson(row,f) && (row["pairID"]|0U)==pairId) {
@@ -12438,7 +12475,7 @@ static bool madeNextPending(String& path,String& payload,String& status) {
   if(root) {
     fs::File f=root.openNextFile();
     while(f) {
-      String name=f.name();
+      String name=madeFilePath(f);
       if(madeIsFile(name)) {
         DynamicJsonDocument row(1100);
         if(!deserializeJson(row,f) && (row["dirty"]|false)) {
@@ -12462,6 +12499,57 @@ static bool madeNextPending(String& path,String& payload,String& status) {
   madeUnlock();
   return path.length()>0&&payload.length()>0;
 }
+// Snapshot pending paths once per session. This avoids retrying a failed first
+// entry repeatedly and starving the second/third queued recipe.
+static int madeCollectPending(String paths[],int maxPaths) {
+  if(!madeLock())return -1;
+  int total=0;
+  fs::File root=LittleFS.open("/");
+  if(root) {
+    fs::File f=root.openNextFile();
+    while(f) {
+      String name=madeFilePath(f);
+      if(total<maxPaths && madeIsFile(name)) {
+        DynamicJsonDocument row(1100);
+        if(!deserializeJson(row,f) && (row["dirty"]|false))
+          paths[total++]=name;
+      }
+      f.close();f=root.openNextFile();
+    }
+    root.close();
+  }
+  madeUnlock();
+  // The device ID prefix is constant; the hex timestamp then sorts records
+  // oldest first. Apps Script separately sorts by actual DateMade/TimeMade.
+  for(int i=1;i<total;i++) {
+    String name=paths[i];int j=i-1;
+    while(j>=0 && paths[j]>name){paths[j+1]=paths[j];j--;}
+    paths[j+1]=name;
+  }
+  return total;
+}
+static bool madePayloadForPath(const String& path,String& body,String& expected) {
+  body="";expected="";
+  if(!madeLock())return false;
+  DynamicJsonDocument row(1100);
+  bool ok=madeRead(path,row) && (row["dirty"]|false);
+  if(ok) {
+    DynamicJsonDocument request(1500);
+    request["action"]="recipesMadeUpsert";
+    request["token"]=sheetAPIToken;
+    const char* fields[]={"entryID","plu","item","dateMade",
+                           "dateExpiry","cook","timeMade","entryStatus"};
+    for(const char* field:fields)request[field]=row[field];
+    if(!request.overflowed()) {
+      serializeJson(request,body);
+      expected=String((const char*)(row["entryStatus"]|""));
+      ok=body.length()>0;
+    } else ok=false;
+  }
+  madeUnlock();
+  return ok;
+}
+
 static bool madeAcknowledge(const String& path,const String& expectedStatus) {
   if(!madeLock())return false;
   DynamicJsonDocument row(1100);
@@ -12491,55 +12579,90 @@ static bool madeConnectWifi() {
   else WiFi.begin(WORK_WIFI_SSID);
   return madeWaitWifi(WIFI_ATTEMPT_MS);
 }
-static void madeRadioOff(){WiFi.disconnect(true,true);WiFi.mode(WIFI_OFF);}
+static void madeRadioOff(){
+  // Disconnect before stopping the Wi-Fi driver; do not erase SSID settings.
+  if(WiFi.getMode()!=WIFI_OFF) {
+    WiFi.disconnect(false,false);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    WiFi.mode(WIFI_OFF);
+  }
+}
 static void madeWorker(void*) {
   uint32_t last=millis();
+  static constexpr int MAX_MADE_BATCH=32;
   while(true) {
     vTaskDelay(pdMS_TO_TICKS(1000));
-    uint32_t intervalMs=(uint32_t)madeRetryMinutes*60000UL;
+    const uint32_t intervalMs=(uint32_t)madeRetryMinutes*60000UL;
     if((uint32_t)(millis()-last)<intervalMs)continue;
     last=millis();
-    String path,body,status;
-    if(!madeNextPending(path,body,status)) {
-      if(madeSyncPhase==MADE_WAITING)madeSyncPhase=MADE_IDLE;
-      continue; // No network operations when the queue is empty.
-    }
-    madeSyncPhase=MADE_RUNNING;
-    if(sheetAPIToken.isEmpty()||!madeConnectWifi()) {
-      madeRadioOff();madeSyncPhase=MADE_FAILED;
-      Serial.println("[MADE] Offline, retry at next configured interval");
+    String entries[MAX_MADE_BATCH];
+    const int count=madeCollectPending(entries,MAX_MADE_BATCH);
+    if(count==0) {
+      // Clear a stale red ! if there are no longer any unsent entries.
+      if(madeSyncPhase!=MADE_SUCCESS || 
+        (uint32_t)(millis()-madeSuccessAtMs)>=5000UL)
+        madeSyncPhase=MADE_IDLE;
       continue;
     }
-    bool failed=false,uploaded=false;
-    for(int n=0;n<100 && madeNextPending(path,body,status);n++) {
+    if(count<0) {
+      madeSyncPhase=MADE_FAILED;
+      Serial.println("[MADE] Cannot access local queue");
+      continue;
+    }
+    madeSyncPhase=MADE_RUNNING;
+    Serial.printf("[MADE] Session begins: %d pending records, heap=%u, maxAlloc=%u\n",
+                  count,(unsigned)ESP.getFreeHeap(),(unsigned)ESP.getMaxAllocHeap());
+    if(sheetAPIToken.isEmpty() || !madeConnectWifi()) {
+      madeRadioOff();madeSyncPhase=MADE_FAILED;
+      Serial.println("[MADE] Offline/token unavailable; all records retained");
+      continue;
+    }
+    bool hadFailure=false,uploaded=false;
+    int attempted=0,acknowledged=0;
+    // Process each queued EntryID ONCE per Wi-Fi session, even if an earlier
+    // redirect/ack fails. Any unacknowledged record remains on LittleFS.
+    for(int i=0;i<count;i++) {
+      String body,status;
+      if(!madePayloadForPath(entries[i],body,status))continue;
+      attempted++;
       String reply,error;
       if(!diagPOSTOnce(body,reply,error)) {
-        Serial.printf("[MADE] POST failed: %s\n",error.c_str());
-        failed=true;break;
+        Serial.printf("[MADE] Upload failed: %s; wifi=%d, heap=%u, maxAlloc=%u\n",
+          error.c_str(),(int)WiFi.status(),
+          (unsigned)ESP.getFreeHeap(),(unsigned)ESP.getMaxAllocHeap());
+        hadFailure=true;
+        if(WiFi.status()!=WL_CONNECTED)break;
+        continue;
       }
-      DynamicJsonDocument ack(512);
-      DynamicJsonDocument sent(1500);
-      if(deserializeJson(ack,reply)||deserializeJson(sent,body)||
+      DynamicJsonDocument ack(512),sent(1500);
+      if(deserializeJson(ack,reply) || deserializeJson(sent,body) ||
          !(ack["success"]|false) ||
-         String((const char*)(ack["entryID"]|""))!=
+         String((const char*)(ack["entryID"]|"")) !=
            String((const char*)(sent["entryID"]|"")) ||
          String((const char*)(ack["entryStatus"]|""))!=status) {
-        Serial.println("[MADE] Invalid or mismatched Apps Script response");
-        failed=true;break;
+        Serial.println("[MADE] Invalid or mismatched Apps Script acknowledgment");
+        hadFailure=true;continue;
       }
-      if(!madeAcknowledge(path,status)) {
-        // Never clear a record whose status changed during upload.
-        Serial.println("[MADE] Changed while sending; retain queued update");
-        failed=true;break;
+      if(!madeAcknowledge(entries[i],status)) {
+        // A cancellation during upload must stay queued for the next session.
+        Serial.println("[MADE] Entry changed during upload or LittleFS ack failed");
+        hadFailure=true;continue;
       }
-      uploaded=true;
+      uploaded=true;acknowledged++;
       Serial.println("[MADE] EntryID acknowledged");
+      vTaskDelay(pdMS_TO_TICKS(25));
     }
-    madeRadioOff(); // Disconnect even on HTTP or API failure.
-    if(failed)madeSyncPhase=MADE_FAILED;
-    else if(madeNextPending(path,body,status))madeSyncPhase=MADE_WAITING;
-    else if(uploaded){madeSuccessAtMs=millis();madeSyncPhase=MADE_SUCCESS;}
-    else madeSyncPhase=MADE_IDLE;
+    madeRadioOff(); // Always release Wi-Fi, regardless of failures.
+    String pending,body,status;
+    const bool stillPending=madeNextPending(pending,body,status);
+    Serial.printf("[MADE] Session finished: attempted=%d acknowledged=%d pending=%s\n",
+      attempted,acknowledged,stillPending?"YES":"NO");
+    if(!stillPending) {
+      if(uploaded) {
+        madeSuccessAtMs=millis();
+        madeSyncPhase=MADE_SUCCESS;
+      } else madeSyncPhase=MADE_IDLE;
+    } else madeSyncPhase=hadFailure?MADE_FAILED:MADE_WAITING;
   }
 }
 static void recipeMadeStartWorker() {
