@@ -9741,7 +9741,6 @@ static void nativeRender();
 static void nativeStartupMessage(const String& a,const String& b,const String& c);
 static void nativeProgress(int percent);
 static void nativeRefreshHeader();
-static void nativeUpdateDueBorder(bool active);
 static void selectCookPrepare();
 static String cookFirstName(int index);
 static void uiLargeButton(Rect r, const String& text, uint16_t bg, uint16_t border=0,
@@ -12349,7 +12348,7 @@ static void madeRecover() {
     fs::File f=root.openNextFile();
     while(f) {
       String name=f.name();f.close();
-      if(name.endsWith(".json.bak")) {
+      if(name.endsWith(".json.bak") || name.endsWith(".json.tmp")) {
         String original=name.substring(0,name.length()-4);
         if(!LittleFS.exists(original))LittleFS.rename(name,original);
         else LittleFS.remove(name);
@@ -13593,6 +13592,18 @@ static void nativeRender(){
     case ALARM_DUE: {
       if(dueAlarm<0||dueAlarm>=alarmCount)break;
       const Alarm& a=alarms[dueAlarm];
+      // Approved Change #6: red rounded alarm card under HOME-positioned text.
+      lv_obj_t* dueCard=lv_obj_create(nativeRoot);
+      lv_obj_set_pos(dueCard,24,50);
+      lv_obj_set_size(dueCard,432,117);
+      lv_obj_set_style_bg_color(dueCard,nativeColor(RED),0);
+      lv_obj_set_style_bg_opa(dueCard,LV_OPA_COVER,0);
+      lv_obj_set_style_border_color(dueCard,lv_color_white(),0);
+      lv_obj_set_style_border_width(dueCard,1,0);
+      lv_obj_set_style_radius(dueCard,10,0);
+      lv_obj_set_style_pad_all(dueCard,0,0);
+      lv_obj_clear_flag(dueCard,LV_OBJ_FLAG_CLICKABLE);
+      lv_obj_clear_flag(dueCard,LV_OBJ_FLAG_SCROLLABLE);
       homeAlarmAutoFit(a,53,49);
       homeAutoFit(homeFullRecipe(a),109,49);
       homeButton(DUE_DONE,"DONE",lv_color_make(87,199,90),true);
