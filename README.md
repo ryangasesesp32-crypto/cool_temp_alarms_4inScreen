@@ -1,5 +1,23 @@
 # Freenove Cooling Alarm — 4-inch Native LVGL
 
+## v1.44 — Break Log-proven Google upload retry (SOURCE STAGED)
+
+**Status: Source updated; no compiled binary or v1.44 OTA release has been published.** The firmware version and build ID are now v1.44, with both the Arduino source and a matching text snapshot committed to main.
+
+- Reuse the working Simple Break Monitor Buttons v1.13 pattern for ContentService: POST with redirects disabled, close the POST socket completely, then use a fresh GET with \`HTTPC_STRICT_FOLLOW_REDIRECTS\`. Do not carry POST headers into the redirected GET.
+- The RecipesMade core-0 background worker now retries the **entire POST once**, after a 500 ms delay, if its transport attempt fails. A stable EntryID and the existing idempotent Apps Script upsert prevent duplicate rows.
+- Insert a 1000 ms interval between consecutive queued records, matching the proven Break Log pacing.
+- Add HTTP library error descriptions, RSSI, heap and maximum-allocation readings for the redirected GET and each POST retry. Never print the token-bearing Location URL.
+- Check **success + matching EntryID + matching entryStatus** before writing \`dirty=false\` to the corresponding LittleFS journal file; retain all unacknowledged records, including those already visible in Google Sheets.
+- Keep approved Q/yellow, UP/green, F/red, blank/empty HOME indicators, touchscreen UI, alarms, sounds, scheduling, and cancellation workflow unchanged.
+- Apply improved shared transport to the startup diagnostic HTTP helper as well; its existing explicit two-attempt POST wrapper is preserved.
+
+**Known limitation:** This was not compiled or tested on the actual Freenove hardware in this update. The earlier \`REDIRECT HTTP=-1\` may still recur if TLS allocations or the network prevent connecting to \`script.googleusercontent.com\`; improved logs will help identify that. Do not format LittleFS or delete queued preparations.
+
+[v1.44 Arduino source](./Sketch_13.1_LVGL.ino) · [v1.44 complete text snapshot](./CoolingAlarm_Freenove_v1_44.txt)
+
+**OTA staging:** \`firmware.json\` intentionally remains on v1.43. Create the v1.44 draft and advance the manifest only when preparing the next binary release; no firmware update is forced by this source-only commit.
+
 ## v1.43 — RecipesMade status indicator (DRAFT RELEASE; NOT PUBLISHED)
 
 The pending v1.43 firmware source changes the small HOME upload indicator only:
