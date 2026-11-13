@@ -1,5 +1,20 @@
 # Freenove Cooling Alarm — 4-inch Native LVGL
 
+## v1.45 — Google ContentService redirect TLS memory diagnostics (SOURCE READY; OTA NOT PUBLISHED)
+
+**Status:** v1.45 source is committed to `main`, but has **not** been compiled, hardware-tested, or published as an OTA binary. The existing `firmware.json` intentionally remains on v1.44 until a verified v1.45 release binary is attached.
+
+- Shrink LVGL's internal-RAM draw buffer from 12 lines (11,520 bytes) to 4 lines (3,840 bytes), freeing **7,680 bytes** for TLS during background Google Sheets uploads. This may increase full-screen draw flushes; test touchscreen responsiveness on hardware.
+- Fully finish and destroy the POST HTTP/TLS objects before starting the ContentService redirect GET, with a 40 ms network cleanup yield.
+- On redirect GET failures, log the underlying `WiFiClientSecure::lastError`/mbedTLS code and message, internal free heap, largest internal allocation, Wi-Fi status, and RSSI. If the TLS code is zero, additionally test DNS resolution of `script.googleusercontent.com`.
+- Never reveal the token-bearing Google redirect URL in serial diagnostics.
+- Preserve queued RecipesMade journal entries and unchanged EntryID/status ACK checks, idempotent upsert handling, the config-driven retry interval, the full-POST retry pattern, alarms, UI layout, and buzzer/button behavior.
+- Existing indicators remain Q/yellow (queued), UP/green (uploading), F/red (failed), blank (nothing pending).
+
+**Next test:** Compile v1.45 with the same Freenove board settings as v1.44, attach the binary to a new GitHub release, and only then update `firmware.json` for OTA. On the next attempted upload, capture the new `[HTTP] Redirect failed: ... TLS=...` line. Do not clear LittleFS or the queue.
+
+[v1.45 Arduino source](./Sketch_13.1_LVGL.ino) · [v1.45 complete text snapshot](./CoolingAlarm_Freenove_v1_45.txt)
+
 ## v1.44 — Break Log-proven Google upload retry (DRAFT RELEASE; NOT PUBLISHED)
 
 **Status: v1.44 source is committed, and a draft release is being staged for a manual binary upload.** The compiled binary has not been attached or hardware-tested as part of this change. The firmware version and build ID are v1.44, with both the Arduino source and a matching text snapshot committed to main.
