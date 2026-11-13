@@ -1,8 +1,24 @@
 # Freenove Cooling Alarm — 4-inch Native LVGL
 
-## v1.41 — Paired alarm rows, HOME-style due screen and RecipesMade sync (SOURCE ONLY)
+## v1.42 — Reliable RecipesMade queue and newest-first Google Sheet (STAGED)
 
-**Status:** v1.41 Arduino source has been committed for review and device compilation; **no v1.41 binary or OTA release has been published**. The existing `firmware.json` deliberately still points to the **published v1.40** firmware, so the installed devices will not auto-update to an untested build.
+**Source ready; compilation/device validation pending.** v1.42 updates the existing v1.41 functionality without changing the approved HOME, ALARM_DUE, View Alarms, buzzer, LED or C1/C2 scheduling designs.
+
+- Retry the Google ContentService **redirect GET** up to three times using separate TLS connections; do not repeat the preceding POST during those attempts. Failures print Wi-Fi, heap and largest-allocation diagnostics without exposing access tokens.
+- Use absolute `File.path()` LittleFS paths, including for pre-existing queued records, during recovery, upload and acknowledgment.
+- Snapshot up to 32 pending RecipesMade records per Wi-Fi session, oldest-first, so one failed entry cannot starve later entries. Keep failures queued and keep EntryID-based idempotence on later retries.
+- Shut down Wi-Fi cleanly after the session and clear a stale red `!` when there are no remaining queued entries.
+- **Private Google Apps Script v1.31** is supplied separately; it inserts new entries below the header and sorts the `RecipesMade` sheet by `DateMade` and `TimeMade` descending. Existing EntryID deduplication and Cancelled-only transitions remain unchanged. Do **not** commit the script or its token to this public GitHub repository.
+
+[Full Arduino source](./Sketch_13.1_LVGL.ino) · [v1.42 copy/paste text](./CoolingAlarm_Freenove_v1_42.txt) · [OTA manifest](./firmware.json)
+
+**OTA:** A new `freenove-v1.42` draft release is created by [the release workflow](./.github/workflows/create-v1-42-draft-release.yml). Upload the compiled `Sketch_13.1_LVGL.ino.bin`, verify it was built from this v1.42 source, then publish. The manifest has been staged to v1.42 and download attempts cannot succeed until the matching asset is published.
+
+**Deployment order:** Deploy Apps Script v1.31 as a new version of the *existing* Google web app, compile/test v1.42 on Freenove, attach the binary to the draft, publish, and verify the three existing recipes recover from the LittleFS queue without duplication. Do not format LittleFS or delete existing alarms.
+
+## v1.41 — Paired alarm rows, HOME-style due screen and RecipesMade sync (PUBLISHED)
+
+**Status:** v1.41 was published with a compiled binary. Its Google redirect acknowledgment and LittleFS queue issues prompted the v1.42 reliability changes above.
 
 The seven requested changes are in the [current Arduino sketch](./Sketch_13.1_LVGL.ino) and matching [downloadable v1.41 text snapshot](./CoolingAlarm_Freenove_v1_41.txt):
 

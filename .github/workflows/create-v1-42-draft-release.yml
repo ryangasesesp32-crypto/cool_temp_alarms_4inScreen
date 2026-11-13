@@ -1,0 +1,30 @@
+name: Create Freenove v1.42 draft release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-v1-42-draft-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stage v1.42 firmware release for manual upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "freenove-v1.42" >/dev/null 2>&1; then
+            echo "Existing v1.42 release retained"
+          else
+            gh release create "freenove-v1.42" \
+              --target main \
+              --title "Freenove Cooling Alarm v1.42 — RecipesMade Upload Reliability" \
+              --notes "Firmware v1.42 improves Apps Script redirect GET retries (without repeating POST in one session), LittleFS queue paths and acknowledgments, multi-entry uploads despite an individual failed request, cleanup of stale error indicators and Wi-Fi shutdown diagnostics. Companion private Apps Script v1.31 sorts RecipesMade newest-first using DateMade and TimeMade while retaining EntryID deduplication and cancellation safeguards. Existing alarm/buzzer/LVGL behavior remains intended to be unchanged. NOT YET COMPILED OR TESTED ON HARDWARE. Upload the matching Sketch_13.1_LVGL.ino.bin binary and publish only after verifying the build, then check pending queue recovery." \
+              --draft
+          fi
