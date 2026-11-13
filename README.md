@@ -15,7 +15,7 @@ Baseline is v1.39; the only change is how the flashing red Alarm Due border is d
 **Build.** `arduino-cli`, ESP32 core 3.3.12, ESP32 Dev Module, Minimal SPIFFS (1.9MB APP with OTA), Freenove FNK0114S `TFT_eSPI`/`lvgl` 8.4.0 and `display.h`/`display.cpp`, ArduinoJson 7.4.3. `Sketch_13.1_LVGL.ino.bin` is 1,658,528 bytes, SHA-256 `77de0ab9bf98b9947c1350a908041adcb371c73705b2e7257ea96a2f7460d84f`.
 
 - [Arduino source](./Sketch_13.1_LVGL.ino) and identical [v1.40 text snapshot](./CoolingAlarm_Freenove_v1_40.txt).
-- **OTA is still v1.39** until [firmware.json](./firmware.json) is updated and a `freenove-v1.40` release with the binary is published.
+- [firmware.json](./firmware.json) **points to v1.40**. The `freenove-v1.40` release is a draft; OTA downloads fail (devices keep their current firmware) until the binary is attached and the release is published.
 
 ## v1.39 — Google Sheets configurable Alarm Due buzzer cadence (source ready)
 

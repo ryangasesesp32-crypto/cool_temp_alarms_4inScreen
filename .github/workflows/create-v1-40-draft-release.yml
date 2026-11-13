@@ -1,0 +1,30 @@
+name: Create Freenove v1.40 draft release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-v1-40-draft-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stage v1.40 firmware release for manual upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "freenove-v1.40" >/dev/null 2>&1; then
+            echo "Existing v1.40 release retained"
+          else
+            gh release create "freenove-v1.40" \
+              --target main \
+              --title "Freenove Cooling Alarm v1.40 — Alarm Due Wave Fix" \
+              --notes "v1.40 = v1.39 plus a fix for the Alarm Due screen wave and stretched chirps: the flashing red border is now four thin bars repainted immediately, instead of a full-area repaint on every chirp; buzzer and LEDs switch before the repaint; the loop idles 1 ms while an alarm sounds. No change to Sheets chirp settings, the five-chirp cycle, acknowledgement, scheduling, storage or OTA. Compiled with arduino-cli (ESP32 core 3.3.12, ESP32 Dev Module, Minimal SPIFFS); not yet tested on hardware. Upload Sketch_13.1_LVGL.ino.bin (1,658,528 bytes, SHA-256 77de0ab9bf98b9947c1350a908041adcb371c73705b2e7257ea96a2f7460d84f), then publish. firmware.json already points to v1.40; OTA downloads fail until this release is published with the binary." \
+              --draft
+          fi
