@@ -367,6 +367,9 @@
 #include <FS.h>
 #include <LittleFS.h>
 #include <WiFi.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/semphr.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <HTTPUpdate.h>
@@ -9515,6 +9518,12 @@ static String configuredTimezone = "PCT7";
 // A separately validated Config response is applied before the roster cache.
 // This prevents an old dataset from overriding newer remote settings.
 static bool runtimeConfigLoaded = false;
+enum MadeSyncPhase:uint8_t {MADE_IDLE=0,MADE_WAITING=1,MADE_RUNNING=2,MADE_SUCCESS=3,MADE_FAILED=4};
+static volatile uint8_t madeSyncPhase=MADE_IDLE;
+static volatile uint32_t madeSuccessAtMs=0;
+static uint16_t madeRetryMinutes=5;
+static SemaphoreHandle_t madeMutex=nullptr;
+static TaskHandle_t madeTask=nullptr;
 static const char* NTP_1 = "pool.ntp.org";
 static const char* NTP_2 = "time.google.com";
 static constexpr uint32_t WIFI_ATTEMPT_MS = 6000;
@@ -9689,6 +9698,10 @@ void exitCalibration(bool saved);
 void processCalibrationPoint(int rawX, int rawY);
 void saveLocalAlarms();
 static void recipeMadeQueueCancelledIfBoth(uint32_t pairId);
+static bool recipeMadeQueueCreate(uint32_t pairId,int recipeIndex,int cookIndex);
+static void recipeMadeStartWorker();
+static void recipeMadeDrawStatus();
+static void recipeMadeCreateStatusWidget();
 static void saveEditedAlarmImmediately();
 bool loadLocalAlarms();
 bool connectStartupWiFi();
@@ -12276,6 +12289,260 @@ bool diagPOSTOnce(const String& body, String& reply, String& failure) {
   if(!trimmed.startsWith("{")){failure="REDIRECT NON-JSON";return false;}
   return true;
 }
+
+// ------------------- RecipesMade background sync -------------------
+// One independent LittleFS journal file per preparation, preserved after
+// Active upload because cancelling both stages can later require an update.
+// FreeRTOS never touches LVGL, the alarm array, or live touch state.
+static bool madeIsFile(const String& path) {
+  return (path.startsWith("/rm_")||path.startsWith("rm_")) &&
+         path.endsWith(".json");
+}
+static bool madeLock() {
+  return fsReady && madeMutex &&
+         xSemaphoreTake(madeMutex,pdMS_TO_TICKS(200))==pdTRUE;
+}
+static void madeUnlock() {xSemaphoreGive(madeMutex);}
+static bool madeRead(const String& path,DynamicJsonDocument& doc) {
+  fs::File f=LittleFS.open(path,"r");
+  if(!f)return false;
+  DeserializationError error=deserializeJson(doc,f);
+  f.close();return !error;
+}
+static bool madeWrite(const String& path,DynamicJsonDocument& doc) {
+  String temporary=path+".tmp",backup=path+".bak";
+  LittleFS.remove(temporary);
+  fs::File f=LittleFS.open(temporary,"w");
+  if(!f)return false;
+  size_t n=serializeJson(doc,f);f.flush();f.close();
+  if(n==0){LittleFS.remove(temporary);return false;}
+  LittleFS.remove(backup);
+  bool old=LittleFS.exists(path);
+  if(old && !LittleFS.rename(path,backup)){LittleFS.remove(temporary);return false;}
+  if(!LittleFS.rename(temporary,path)){
+    if(old)LittleFS.rename(backup,path);
+    LittleFS.remove(temporary);return false;
+  }
+  LittleFS.remove(backup);return true;
+}
+static void madeRecover() {
+  if(!madeLock())return;
+  fs::File root=LittleFS.open("/");
+  if(root) {
+    fs::File f=root.openNextFile();
+    while(f) {
+      String name=f.name();f.close();
+      if(name.endsWith(".json.bak")) {
+        String original=name.substring(0,name.length()-4);
+        if(!LittleFS.exists(original))LittleFS.rename(name,original);
+        else LittleFS.remove(name);
+      }
+      f=root.openNextFile();
+    }
+    root.close();
+  }
+  madeUnlock();
+}
+static bool recipeMadeQueueCreate(uint32_t pairId,int recipeIndex,int cookIndex) {
+  if(recipeIndex<0||recipeIndex>=RECIPE_COUNT||cookIndex<0||cookIndex>=COOK_COUNT ||
+     !madeLock()) {madeSyncPhase=MADE_FAILED;return false;}
+  const time_t when=time(nullptr);
+  struct tm local={};
+  if(!timeSynced || !localtime_r(&when,&local) || local.tm_year+1900<2025) {
+    madeUnlock();madeSyncPhase=MADE_FAILED;
+    Serial.println("[MADE] Clock unverified: no fabricated recipe creation date");
+    return false;
+  }
+  char dateMade[11],dateExpiry[11],timeMade[9];
+  strftime(dateMade,sizeof(dateMade),"%Y-%m-%d",&local);
+  strftime(timeMade,sizeof(timeMade),"%H:%M:%S",&local);
+  struct tm expiry=local;expiry.tm_mday+=6;
+  mktime(&expiry);
+  strftime(dateExpiry,sizeof(dateExpiry),"%Y-%m-%d",&expiry);
+  String entryId=String("F4-")+String((uint32_t)(ESP.getEfuseMac()>>16),HEX)+
+         "-"+String((uint32_t)when,HEX)+"-"+String(esp_random(),HEX);
+  String path="/rm_"+entryId+".json";
+  DynamicJsonDocument row(1100);
+  row["entryID"]=entryId;
+  row["pairID"]=pairId;
+  row["madeEpoch"]=(uint32_t)when;
+  row["plu"]=String(recipes[recipeIndex].plu);
+  row["item"]=String(recipes[recipeIndex].name);
+  row["cook"]=String(cooks[cookIndex].name);
+  row["dateMade"]=dateMade;row["dateExpiry"]=dateExpiry;row["timeMade"]=timeMade;
+  row["entryStatus"]="Active";row["dirty"]=true;
+  bool ok=!row.overflowed() && madeWrite(path,row);
+  madeUnlock();
+  madeSyncPhase=ok?MADE_WAITING:MADE_FAILED;
+  Serial.printf("[MADE] %s; EntryID=%s\n",ok?"QUEUED":"QUEUE FAILED",entryId.c_str());
+  return ok;
+}
+static void recipeMadeQueueCancelledIfBoth(uint32_t pairId) {
+  bool c1=false,c2=false;
+  for(int i=0;i<alarmCount;i++)if(alarms[i].pairId==pairId) {
+    if(alarms[i].stage==1)c1=alarms[i].status==AlarmStatus::Cancelled;
+    if(alarms[i].stage==2)c2=alarms[i].status==AlarmStatus::Cancelled;
+  }
+  if(!c1||!c2)return; // Cancelling only one cooling stage leaves Active.
+  if(!madeLock()){madeSyncPhase=MADE_FAILED;return;}
+  String newest;uint32_t newestEpoch=0;
+  fs::File root=LittleFS.open("/");
+  if(root) {
+    fs::File f=root.openNextFile();
+    while(f) {
+      String path=f.name();
+      if(madeIsFile(path)){
+        DynamicJsonDocument row(1100);
+        if(!deserializeJson(row,f) && (row["pairID"]|0U)==pairId) {
+          uint32_t epoch=row["madeEpoch"]|0U;
+          if(newest.isEmpty()||epoch>=newestEpoch){newest=path;newestEpoch=epoch;}
+        }
+      }
+      f.close();f=root.openNextFile();
+    }
+    root.close();
+  }
+  bool ok=false;
+  if(newest.length()) {
+    DynamicJsonDocument row(1100);
+    if(madeRead(newest,row)) {
+      row["entryStatus"]="Cancelled";row["dirty"]=true;
+      ok=!row.overflowed()&&madeWrite(newest,row);
+    }
+  }
+  madeUnlock();
+  madeSyncPhase=ok?MADE_WAITING:MADE_FAILED;
+  Serial.println(ok?"[MADE] Both C1/C2 cancelled: update queued":
+                    "[MADE] Cancellation queue write FAILED");
+}
+static bool madeNextPending(String& path,String& payload,String& status) {
+  path="";payload="";status="";
+  if(!madeLock())return false;
+  fs::File root=LittleFS.open("/");
+  if(root) {
+    fs::File f=root.openNextFile();
+    while(f) {
+      String name=f.name();
+      if(madeIsFile(name)) {
+        DynamicJsonDocument row(1100);
+        if(!deserializeJson(row,f) && (row["dirty"]|false)) {
+          DynamicJsonDocument post(1500);
+          post["action"]="recipesMadeUpsert";
+          post["token"]=sheetAPIToken; // never printed
+          const char* fields[]={"entryID","plu","item","dateMade",
+            "dateExpiry","cook","timeMade","entryStatus"};
+          for(const char* field:fields)post[field]=row[field];
+          if(!post.overflowed()) {
+            serializeJson(post,payload);
+            path=name;status=String((const char*)(row["entryStatus"]|""));
+          }
+          f.close();break;
+        }
+      }
+      f.close();f=root.openNextFile();
+    }
+    root.close();
+  }
+  madeUnlock();
+  return path.length()>0&&payload.length()>0;
+}
+static bool madeAcknowledge(const String& path,const String& expectedStatus) {
+  if(!madeLock())return false;
+  DynamicJsonDocument row(1100);
+  bool ok=madeRead(path,row);
+  if(ok && String((const char*)(row["entryStatus"]|""))==expectedStatus) {
+    row["dirty"]=false;ok=madeWrite(path,row);
+  } else ok=false; // Status changed while POST was in flight.
+  madeUnlock();
+  return ok;
+}
+static bool madeWaitWifi(uint32_t ms) {
+  uint32_t start=millis();
+  while((uint32_t)(millis()-start)<ms) {
+    if(WiFi.status()==WL_CONNECTED)return true;
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+  return WiFi.status()==WL_CONNECTED;
+}
+static bool madeConnectWifi() {
+  WiFi.mode(WIFI_STA);WiFi.persistent(false);WiFi.setAutoReconnect(false);
+  if(homeWiFiSSID.length()>0) {
+    WiFi.begin(homeWiFiSSID.c_str(),homeWiFiPassword.c_str());
+    if(madeWaitWifi(WIFI_ATTEMPT_MS))return true;
+    WiFi.disconnect(true);vTaskDelay(pdMS_TO_TICKS(300));WiFi.mode(WIFI_STA);
+  }
+  if(WORK_WIFI_PASSWORD[0])WiFi.begin(WORK_WIFI_SSID,WORK_WIFI_PASSWORD);
+  else WiFi.begin(WORK_WIFI_SSID);
+  return madeWaitWifi(WIFI_ATTEMPT_MS);
+}
+static void madeRadioOff(){WiFi.disconnect(true,true);WiFi.mode(WIFI_OFF);}
+static void madeWorker(void*) {
+  uint32_t last=millis();
+  while(true) {
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    uint32_t intervalMs=(uint32_t)madeRetryMinutes*60000UL;
+    if((uint32_t)(millis()-last)<intervalMs)continue;
+    last=millis();
+    String path,body,status;
+    if(!madeNextPending(path,body,status)) {
+      if(madeSyncPhase==MADE_WAITING)madeSyncPhase=MADE_IDLE;
+      continue; // No network operations when the queue is empty.
+    }
+    madeSyncPhase=MADE_RUNNING;
+    if(sheetAPIToken.isEmpty()||!madeConnectWifi()) {
+      madeRadioOff();madeSyncPhase=MADE_FAILED;
+      Serial.println("[MADE] Offline, retry at next configured interval");
+      continue;
+    }
+    bool failed=false,uploaded=false;
+    for(int n=0;n<100 && madeNextPending(path,body,status);n++) {
+      String reply,error;
+      if(!diagPOSTOnce(body,reply,error)) {
+        Serial.printf("[MADE] POST failed: %s\n",error.c_str());
+        failed=true;break;
+      }
+      DynamicJsonDocument ack(512);
+      DynamicJsonDocument sent(1500);
+      if(deserializeJson(ack,reply)||deserializeJson(sent,body)||
+         !(ack["success"]|false) ||
+         String((const char*)(ack["entryID"]|""))!=
+           String((const char*)(sent["entryID"]|"")) ||
+         String((const char*)(ack["entryStatus"]|""))!=status) {
+        Serial.println("[MADE] Invalid or mismatched Apps Script response");
+        failed=true;break;
+      }
+      if(!madeAcknowledge(path,status)) {
+        // Never clear a record whose status changed during upload.
+        Serial.println("[MADE] Changed while sending; retain queued update");
+        failed=true;break;
+      }
+      uploaded=true;
+      Serial.println("[MADE] EntryID acknowledged");
+    }
+    madeRadioOff(); // Disconnect even on HTTP or API failure.
+    if(failed)madeSyncPhase=MADE_FAILED;
+    else if(madeNextPending(path,body,status))madeSyncPhase=MADE_WAITING;
+    else if(uploaded){madeSuccessAtMs=millis();madeSyncPhase=MADE_SUCCESS;}
+    else madeSyncPhase=MADE_IDLE;
+  }
+}
+static void recipeMadeStartWorker() {
+  if(!fsReady||!madeMutex) {
+    madeSyncPhase=MADE_FAILED;
+    Serial.println("[MADE] LittleFS/mutex unavailable; worker disabled");
+    return;
+  }
+  madeRecover();
+  String path,body,status;
+  madeSyncPhase=madeNextPending(path,body,status)?MADE_WAITING:MADE_IDLE;
+  BaseType_t result=xTaskCreatePinnedToCore(
+    madeWorker,"RecipesMade",12288,nullptr,1,&madeTask,0);
+  if(result!=pdPASS) {
+    madeSyncPhase=MADE_FAILED;
+    Serial.println("[MADE] Worker task allocation failed");
+  } else Serial.printf("[MADE] Worker active, retry interval=%u minute(s)\n",madeRetryMinutes);
+}
+
 bool diagUpload(const String& report, const String& id, String& error) {
   if(WiFi.status()!=WL_CONNECTED){error="NO WIFI";return false;}
   if(sheetAPIToken.length()==0){error="NO SHEETS TOKEN";return false;}
