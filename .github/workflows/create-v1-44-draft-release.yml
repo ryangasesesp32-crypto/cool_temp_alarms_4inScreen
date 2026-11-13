@@ -1,0 +1,30 @@
+name: Create Freenove v1.44 draft release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/create-v1-44-draft-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stage v1.44 firmware release for manual binary upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "freenove-v1.44" >/dev/null 2>&1; then
+            echo "Existing v1.44 release retained"
+          else
+            gh release create "freenove-v1.44" \
+              --target main \
+              --title "Freenove Cooling Alarm v1.44 — Break Log Reliable HTTP Upload" \
+              --notes "Freenove v1.44 adapts the proven Break Monitor upload method for RecipesMade. It POSTs to Google Apps Script with redirects disabled, closes that connection, and reads ContentService output via a new HTTPS GET with strict redirects. The FreeRTOS background upload task retries the entire POST once after 500 ms when transport fails, spaces records by 1 second, and preserves LittleFS until the Apps Script response explicitly acknowledges the matching EntryID and status. An idempotent Apps Script upsert prevents duplicates. Extra Wi-Fi, HTTP and TLS-memory diagnostics are included without logging token-bearing Google redirect URLs. The approved HOME Q/yellow, UP/green, F/red and blank queue markers remain unchanged, as do alarm scheduling, touch, LED and buzzer behavior. IMPORTANT: SOURCE ONLY, NOT YET COMPILED OR HARDWARE-VALIDATED. Do not clear LittleFS or re-create queued records. Upload matching Sketch_13.1_LVGL.ino.bin, test before publishing. Manifest firmware.json is staged to v1.44." \
+              --draft
+          fi

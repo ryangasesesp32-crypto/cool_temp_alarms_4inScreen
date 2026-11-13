@@ -1,8 +1,8 @@
 # Freenove Cooling Alarm — 4-inch Native LVGL
 
-## v1.44 — Break Log-proven Google upload retry (SOURCE STAGED)
+## v1.44 — Break Log-proven Google upload retry (DRAFT RELEASE; NOT PUBLISHED)
 
-**Status: Source updated; no compiled binary or v1.44 OTA release has been published.** The firmware version and build ID are now v1.44, with both the Arduino source and a matching text snapshot committed to main.
+**Status: v1.44 source is committed, and a draft release is being staged for a manual binary upload.** The compiled binary has not been attached or hardware-tested as part of this change. The firmware version and build ID are v1.44, with both the Arduino source and a matching text snapshot committed to main.
 
 - Reuse the working Simple Break Monitor Buttons v1.13 pattern for ContentService: POST with redirects disabled, close the POST socket completely, then use a fresh GET with \`HTTPC_STRICT_FOLLOW_REDIRECTS\`. Do not carry POST headers into the redirected GET.
 - The RecipesMade core-0 background worker now retries the **entire POST once**, after a 500 ms delay, if its transport attempt fails. A stable EntryID and the existing idempotent Apps Script upsert prevent duplicate rows.
@@ -16,9 +16,9 @@
 
 [v1.44 Arduino source](./Sketch_13.1_LVGL.ino) · [v1.44 complete text snapshot](./CoolingAlarm_Freenove_v1_44.txt)
 
-**OTA staging:** \`firmware.json\` intentionally remains on v1.43. Create the v1.44 draft and advance the manifest only when preparing the next binary release; no firmware update is forced by this source-only commit.
+**OTA release preparation:** `firmware.json` now points to the `freenove-v1.44` release asset named `Sketch_13.1_LVGL.ino.bin`. A [draft-release workflow](./.github/workflows/create-v1-44-draft-release.yml) creates the unpublished draft. Compile the **v1.44** source, attach the matching `.bin`, and publish only after testing. Until a release is published with the binary, the URL is not downloadable; existing devices should retain their installed firmware. Preserve the LittleFS records on device.
 
-## v1.43 — RecipesMade status indicator (DRAFT RELEASE; NOT PUBLISHED)
+## v1.43 — RecipesMade status indicator (PUBLISHED)
 
 The pending v1.43 firmware source changes the small HOME upload indicator only:
 
@@ -27,11 +27,11 @@ The pending v1.43 firmware source changes the small HOME upload indicator only:
 - **F** red — upload or acknowledgment failed, with pending data retained.
 - **Blank** — no pending queue records, including after successful synchronization. Removed the former blue `UP`, red `!`, and green `OK` markers.
 
-This is a display/status change only. **The Google redirect acknowledgment issue is not fixed by this change**, and queued entries remain pending until acknowledged, so an item that was saved in Sheets may still show F. The OTA manifest now points to the staged **v1.43** release asset; OTA cannot download it until the matching compiled binary is uploaded and the draft release is published.
+This was a display/status change only. **The Google redirect acknowledgment issue was not fixed in v1.43**; queued entries remained pending until acknowledged. The v1.43 binary was subsequently published. The current OTA manifest is staged to v1.44.
 
 [v1.43 Arduino source](./Sketch_13.1_LVGL.ino) · [v1.43 text snapshot](./CoolingAlarm_Freenove_v1_43.txt) · [v1.43 OTA manifest](./firmware.json)
 
-**Release preparation:** `freenove-v1.43` is a **draft**. Compile this exact v1.43 source and upload the binary as `Sketch_13.1_LVGL.ino.bin` before publishing. Do not erase LittleFS or re-create existing queued preparations. The previous v1.42 draft remains unchanged.
+**Prior release:** `freenove-v1.43` is published. Do not erase LittleFS or re-create existing queued preparations. The previous v1.42 draft remains unchanged.
 
 ## v1.42 — Reliable RecipesMade queue and newest-first Google Sheet (STAGED)
 
