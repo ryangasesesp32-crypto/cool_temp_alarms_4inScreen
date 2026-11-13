@@ -9485,8 +9485,8 @@ static StartupSerialMirror startupSerial(Serial);
 // PUBLIC OTA-SAFE build. Wi-Fi credentials and Apps Script token remain in
 // device Preferences (NVS), provisioned by the earlier v1.14 USB build.
 // Do not embed or publish private credentials in this source or binary.
-static const char* FIRMWARE_VERSION = "v1.40"; // Freenove-only OTA version; original alarm logic remains v1.31
-static const char* FREENOVE_BUILD_ID = "LVGL-F4-DueBorderBars-v1.40";
+static const char* FIRMWARE_VERSION = "v1.41"; // Freenove-only OTA version; original alarm logic remains v1.31
+static const char* FREENOVE_BUILD_ID = "LVGL-F4-PairedAlarms-RecipesMade-v1.41";
 static const char* GITHUB_OTA_MANIFEST_URL = "https://raw.githubusercontent.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/main/firmware.json";
 // SAFETY: do not point this board at the ELEGOO production manifest.
 // The Freenove manifest may point to a staged draft release; OTA download will
@@ -9898,7 +9898,7 @@ static const char *VENUES[] = {
 static const char *TYPES[] = {"Protein", "Vegetable", "Other"};
 static constexpr int VENUE_COUNT = sizeof(VENUES)/sizeof(VENUES[0]);
 static constexpr int TYPE_COUNT = sizeof(TYPES)/sizeof(TYPES[0]);
-struct RecipeInfo {char name[48]; uint8_t venue, type;};
+struct RecipeInfo {char name[48]; char plu[16]; uint8_t venue, type;};
 static RecipeInfo *recipes = nullptr; // heap allocated at startup
 static int RECIPE_COUNT = 0;
 // Shared sorted recipe index used by native LVGL View Recipes and touch selection.
@@ -10687,8 +10687,10 @@ void yesConfirmation() {
       goBack();
       return;
     }
+    uint32_t id=nextPairId;
     addPairWithSelectedTimes(cooks[selectedCook].initials,recipes[selectedRecipe].name);
     saveLocalAlarms();
+    if(lastAlarmSaveSucceeded)recipeMadeQueueCreate(id,selectedRecipe,selectedCook);
     Serial.println("Pair created and saved locally");
     goHome();
   } else if(action==CA_SAVE_EDIT) {
@@ -10738,6 +10740,8 @@ static bool createPairImmediately() {
     Serial.println("CREATE FAILED: new alarms not saved; original alarms preserved");
     return false;
   }
+  if(!recipeMadeQueueCreate(alarms[previousCount].pairId,selectedRecipe,selectedCook))
+    Serial.println("[MADE] Alarm saved locally but RecipesMade journal write failed");
   createSaveError=false;
   Serial.println("CREATE SUCCESS: C1/C2 pair saved to NVS; acknowledging with two chirps");
   return true;
@@ -11719,6 +11723,7 @@ bool parseSheetDataset(const String& payload,bool apply) {
       String typeName=String((const char*)(entry["type"] | ""));
       item.trim();
       copyText(recipes[ri].name,sizeof(recipes[ri].name),item.c_str());
+      copyText(recipes[ri].plu,sizeof(recipes[ri].plu),(const char*)(entry["plu"] | ""));
       recipes[ri].venue=(uint8_t)lookupVenue(venueName);
       recipes[ri].type=(uint8_t)lookupRecipeType(typeName);
       ++ri;
@@ -12031,6 +12036,18 @@ bool applyRuntimeConfigPayload(const String &payload,bool persist) {
     alarmChirpOffMs=nextGap;
     alarmChirpRestMs=nextLoop;
   }
+  uint16_t nextRetry=madeRetryMinutes;
+  JsonVariantConst iv=c["uploadRetryInMinutes"];
+  if(!iv.isNull()) {
+    String digits=iv.as<String>();bool valid=digits.length()>0&&digits.length()<=4;
+    for(size_t i=0;i<digits.length();i++)if(digits[i]<'0'||digits[i]>'9')valid=false;
+    if(valid && digits.toInt()>=1 && digits.toInt()<=1440)
+      nextRetry=(uint16_t)digits.toInt();
+    else if(persist)startupLogAdd("Invalid UploadRetryInMinutes; using cached setting");
+  }
+  if(persist && nextRetry!=prefs.getUShort("made_retry",5))
+    prefs.putUShort("made_retry",nextRetry);
+  madeRetryMinutes=nextRetry;
   const bool newTestMode=(mode=="TEST");
   if(deviceTestMode!=newTestMode) prefs.putBool("dev_test",newTestMode);
   deviceTestMode=newTestMode;
@@ -13045,6 +13062,7 @@ static void nbase(bool withHeader=true) {
     homeVersionText=homeLabel(String(FIRMWARE_VERSION),351,9,120,29,
                               &cool_mono_regular_18,LV_TEXT_ALIGN_RIGHT);
     homeRefreshClockAndDate();
+    recipeMadeCreateStatusWidget();
   }
 }
 static lv_obj_t* ntext(const String& s,Rect logical,uint16_t fg=WHITE,bool centered=false) {
@@ -13166,6 +13184,33 @@ static const lv_font_t* homeBestFont(const String& s,int maxWidth) {
     if(homeMeasuredWidth(s,f)<=maxWidth)return f;
   return nullptr;
 }
+static String homeFullRecipe(const Alarm& a) {
+  // Retain legacy Alarm NVS layout; resolve truncated 31-byte name from catalog.
+  String prefix(a.recipe);int match=-1;
+  for(int i=0;i<RECIPE_COUNT;i++) {
+    if(strncmp(recipes[i].name,prefix.c_str(),prefix.length())!=0)continue;
+    if(match>=0)return prefix; // Never guess with an ambiguous prefix.
+    match=i;
+  }
+  return match<0?prefix:String(recipes[match].name);
+}
+static void recipeMadeDrawStatus() {
+  if(!homeSyncText)return;
+  uint8_t phase=madeSyncPhase;
+  bool recent=madeSuccessAtMs!=0 && (uint32_t)(millis()-madeSuccessAtMs)<5000;
+  String mark="";lv_color_t color=lv_color_white();
+  if(phase==MADE_RUNNING){mark="UP";color=lv_color_make(40,210,255);}
+  else if(phase==MADE_WAITING){mark="Q";color=lv_color_make(255,210,30);}
+  else if(phase==MADE_FAILED){mark="!";color=lv_color_make(255,65,65);}
+  else if(phase==MADE_SUCCESS && recent){mark="OK";color=lv_color_make(60,220,80);}
+  if(String(lv_label_get_text(homeSyncText))!=mark)
+    lv_label_set_text(homeSyncText,mark.c_str());
+  if(mark.length())lv_obj_set_style_text_color(homeSyncText,color,0);
+}
+static void recipeMadeCreateStatusWidget() {
+  homeSyncText=homeLabel("",347,9,35,29,&cool_mono_regular_18,LV_TEXT_ALIGN_CENTER,false);
+  recipeMadeDrawStatus();
+}
 static void homeAutoFit(const String& value,int y,int h) {
   const int maxW=456;
   const lv_font_t* f=homeBestFont(value,maxW-6);
@@ -13262,6 +13307,7 @@ static void homeRefreshClockAndDate() {
 }
 static void nativeRefreshHeader(){
   homeRefreshClockAndDate(); // same fixed date/time/version header on all eligible screens
+  recipeMadeDrawStatus();
 }
 // Static due border: no LVGL invalidation on buzzer transitions.\n// Startup status screens are replaced by a persistent scrolling log.
 static void nativeStartupMessage(const String&,const String&,const String&) {
@@ -13282,11 +13328,12 @@ static void nativeRender(){
       homeVersionText=homeLabel(String(FIRMWARE_VERSION),351,9,120,29,
                                 &cool_mono_regular_18,LV_TEXT_ALIGN_RIGHT);
       homeRefreshClockAndDate();
+      recipeMadeCreateStatusWidget();
       const int idx=nextPending();
       if(idx>=0) {
         const Alarm& a=alarms[idx];
         homeAlarmAutoFit(a,53,49);
-        homeAutoFit(String(a.recipe),109,49);
+        homeAutoFit(homeFullRecipe(a),109,49);
       }
       // No pending alarms: keep the two information rows completely blank.
       // The red CREATE ALARMS button remains visible and actionable.
@@ -13547,7 +13594,7 @@ static void nativeRender(){
       if(dueAlarm<0||dueAlarm>=alarmCount)break;
       const Alarm& a=alarms[dueAlarm];
       homeAlarmAutoFit(a,53,49);
-      homeAutoFit(String(a.recipe),109,49);
+      homeAutoFit(homeFullRecipe(a),109,49);
       homeButton(DUE_DONE,"DONE",lv_color_make(87,199,90),true);
       nativeDueEdge=lv_obj_create(nativeRoot);
       lv_obj_set_pos(nativeDueEdge,0,ny(28));
@@ -13691,6 +13738,8 @@ void setup() {
   diagBootStage("AFTER MEMORY ALLOCATION");
   prefs.begin("cooltest",false);
   loadSavedAlarmTiming(); // Restore valid buzzer settings before Wi-Fi / Config.
+  madeRetryMinutes=prefs.getUShort("made_retry",5);
+  if(madeRetryMinutes<1||madeRetryMinutes>1440)madeRetryMinutes=5;
   deviceTestMode=prefs.getBool("dev_test",false);
   configuredTimezone=prefs.getString("cfg_tz",TZ_INFO);
   if(configuredTimezone.length()==0)configuredTimezone=TZ_INFO;
@@ -13726,6 +13775,7 @@ void setup() {
   // Diagnostic-only: report whether the first mount works on this Freenove.
   diagBootStage("BEFORE LITTLEFS MOUNT");
   fsReady=LittleFS.begin(false);
+  if(fsReady)madeMutex=xSemaphoreCreateMutex();
   diagBootStage("AFTER LITTLEFS MOUNT");
   logFilesystemStatus("AFTER MOUNT, BEFORE LOG CREATION");
   diagBootStage("BEFORE STARTUP LOG BEGIN");
@@ -13792,6 +13842,7 @@ void setup() {
   logFilesystemStatus("AFTER STARTUP LOG FINALIZE");
   startupMessage("SHUTTING DOWN WIFI", "Wi-Fi and Bluetooth", "Saving startup RSSI");
   shutdownStartupRadios();
+  recipeMadeStartWorker();
   diagBootStage("AFTER RADIO SHUTDOWN");
   startupComplete=true;
   // Apply the FINAL mode after the cached + freshly downloaded Config has
