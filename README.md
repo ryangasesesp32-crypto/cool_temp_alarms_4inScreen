@@ -1,5 +1,18 @@
 # Freenove Cooling Alarm — 4-inch Native LVGL
 
+## v1.43 — RecipesMade status indicator (SOURCE STAGED; NOT PUBLISHED)
+
+The pending v1.43 firmware source changes the small HOME upload indicator only:
+
+- **Q** yellow — local RecipesMade queue has records waiting to upload.
+- **UP** green — upload/acknowledgment session is running.
+- **F** red — upload or acknowledgment failed, with pending data retained.
+- **Blank** — no pending queue records, including after successful synchronization. Removed the former blue `UP`, red `!`, and green `OK` markers.
+
+This is a display/status change only. **The Google redirect acknowledgment issue is not fixed by this change**, and queued entries remain pending until acknowledged. The OTA manifest remains on the published v1.42 build until further v1.43 fixes are complete and a compiled binary is available.
+
+[Staged v1.43 text snapshot](./CoolingAlarm_Freenove_v1_43.txt)
+
 ## v1.42 — Reliable RecipesMade queue and newest-first Google Sheet (STAGED)
 
 **Source ready; compilation/device validation pending.** v1.42 updates the existing v1.41 functionality without changing the approved HOME, ALARM_DUE, View Alarms, buzzer, LED or C1/C2 scheduling designs.

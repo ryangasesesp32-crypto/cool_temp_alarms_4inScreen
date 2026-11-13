@@ -9485,8 +9485,8 @@ static StartupSerialMirror startupSerial(Serial);
 // PUBLIC OTA-SAFE build. Wi-Fi credentials and Apps Script token remain in
 // device Preferences (NVS), provisioned by the earlier v1.14 USB build.
 // Do not embed or publish private credentials in this source or binary.
-static const char* FIRMWARE_VERSION = "v1.42"; // Freenove-only OTA version; original alarm logic remains v1.31
-static const char* FREENOVE_BUILD_ID = "LVGL-F4-RecipesMadeReliableSync-v1.42";
+static const char* FIRMWARE_VERSION = "v1.43"; // Freenove-only OTA version; original alarm logic remains v1.31
+static const char* FREENOVE_BUILD_ID = "LVGL-F4-RecipesMadeStatus-v1.43";
 static const char* GITHUB_OTA_MANIFEST_URL = "https://raw.githubusercontent.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/main/firmware.json";
 // SAFETY: do not point this board at the ELEGOO production manifest.
 // The Freenove manifest may point to a staged draft release; OTA download will
@@ -12598,10 +12598,8 @@ static void madeWorker(void*) {
     String entries[MAX_MADE_BATCH];
     const int count=madeCollectPending(entries,MAX_MADE_BATCH);
     if(count==0) {
-      // Clear a stale red ! if there are no longer any unsent entries.
-      if(madeSyncPhase!=MADE_SUCCESS || 
-        (uint32_t)(millis()-madeSuccessAtMs)>=5000UL)
-        madeSyncPhase=MADE_IDLE;
+      // Empty upload queue must always render a blank status indicator.
+      madeSyncPhase=MADE_IDLE;
       continue;
     }
     if(count<0) {
@@ -13329,13 +13327,14 @@ static String homeFullRecipe(const Alarm& a) {
 }
 static void recipeMadeDrawStatus() {
   if(!homeSyncText)return;
-  uint8_t phase=madeSyncPhase;
-  bool recent=madeSuccessAtMs!=0 && (uint32_t)(millis()-madeSuccessAtMs)<5000;
+  const uint8_t phase=madeSyncPhase;
+  // Status reflects the LOCAL upload queue, not merely a Google Sheets write.
+  // Q=queued (yellow); UP=uploading (green); F=failed (red).
+  // Successful or empty queues have no visible marker (no OK message).
   String mark="";lv_color_t color=lv_color_white();
-  if(phase==MADE_RUNNING){mark="UP";color=lv_color_make(40,210,255);}
+  if(phase==MADE_RUNNING){mark="UP";color=lv_color_make(60,220,80);}
   else if(phase==MADE_WAITING){mark="Q";color=lv_color_make(255,210,30);}
-  else if(phase==MADE_FAILED){mark="!";color=lv_color_make(255,65,65);}
-  else if(phase==MADE_SUCCESS && recent){mark="OK";color=lv_color_make(60,220,80);}
+  else if(phase==MADE_FAILED){mark="F";color=lv_color_make(255,65,65);}
   if(String(lv_label_get_text(homeSyncText))!=mark)
     lv_label_set_text(homeSyncText,mark.c_str());
   if(mark.length())lv_obj_set_style_text_color(homeSyncText,color,0);
