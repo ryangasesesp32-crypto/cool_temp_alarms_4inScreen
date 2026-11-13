@@ -1,37 +1,21 @@
 # Freenove Cooling Alarm — 4-inch Native LVGL
 
-## v1.41 — Code-review fixes (compiled)
+## v1.40 — Alarm Due "wave" and slow-chirp fix (compiled, not hardware-tested)
 
-v1.41 is the first build in this repository compiled outside the Arduino IDE: `arduino-cli`, ESP32 core 3.3.12 (ESP-IDF v5.5.5), **ESP32 Dev Module**, **Minimal SPIFFS (1.9MB APP with OTA)**, Freenove's FNK0114S `TFT_eSPI`/`TFT_eSPI_Setups`/`lvgl` 8.4.0 libraries and `display.h`/`display.cpp` from Freenove `Sketch_13.1_LVGL`, ArduinoJson 7.4.3. The binary is 1,658,336 bytes (84% of the OTA slot) and has the same flash header (4MB, DIO, 80MHz) as the published v1.39 binary. **It has not been tested on hardware.**
+Baseline is v1.39; the only change is how the flashing red Alarm Due border is drawn. (An earlier solid-border diagnostic also labelled v1.40, and a v1.41 review-fix build, were withdrawn and are not part of this version.)
 
-It keeps the v1.40 solid red Alarm Due border and changes only the following:
+**Cause.** v1.39 flashed the border by changing the border width of one object covering everything below the header. LVGL therefore repainted that whole area (about 136,000 pixels, in 12-line strips) on every chirp edge. The strips are the visible top-to-bottom "wave", and the repaint blocked the main loop long enough to stretch 20–60 ms chirps.
 
-- **Alarms created without a verified clock never fired.** They were saved with no due time and stayed silent even after a later synced boot. CREATE is now refused with `CLOCK NOT VERIFIED` until the device has booted with NTP time.
-- **Device stayed dark after a boot without Wi-Fi/NTP.** A saved closed-hours state could never clear because the store schedule needs verified time. The screen now opens for that session; the saved closed state is kept for the next verified boot.
-- **Wrong CREATE error.** A full alarm list (40) showed `SAVE FAILED - RETRY`. It now shows `ALARM LIST FULL`; a real storage failure still shows `SAVE FAILED - RETRY`.
-- **Recipe names longer than 31 characters** were not preselected when editing an alarm's recipe (the saved alarm keeps 31 characters). The match now compares the stored length.
-- **Sheet data download:** running out of memory while parsing is reported as `OUT_OF_MEMORY` instead of `INVALID_JSON`.
-- **SELECT button:** 30 ms debounce so contact bounce cannot count as a second press.
-- **Clear All Alarms failure** is logged to Serial (the old startup-log message could not appear after boot).
-- **Build fix:** `cool_mono_bold_12` now guards `.user_data` with `LV_USE_USER_DATA` like the other fonts. The boot banner prints the real firmware version.
+**Fix.**
+- The border is now four thin red bars (top, bottom, left, right; same 8-unit thickness and position). Showing/hiding them repaints only the bars, about 18,000 pixels.
+- The buzzer and LEDs switch first; the bars are then painted immediately rather than waiting for LVGL's next 30 ms refresh, so the flash stays in step with the sound.
+- While an alarm is sounding the main loop idles 1 ms instead of 8 ms, so short chirps are not rounded up. Other screens keep 8 ms.
+- No change to the Sheets-configured chirp/gap/rest values, the five-chirp cycle, acknowledgement, alarm scheduling, storage or OTA.
 
-Not changed (reviewed, left as is): OTA and Sheets HTTPS still use `setInsecure()` (no certificate check); the Sheets token is still sent in the URL; venues/types are still a fixed list; Config replies over about 4,000 bytes are applied but cannot be backed up to NVS. The buzzer on GPIO18 does not conflict with the display: Freenove's FNK0114S setup uses HSPI on GPIO 12/13/14/15.
+**Build.** `arduino-cli`, ESP32 core 3.3.12, ESP32 Dev Module, Minimal SPIFFS (1.9MB APP with OTA), Freenove FNK0114S `TFT_eSPI`/`lvgl` 8.4.0 and `display.h`/`display.cpp`, ArduinoJson 7.4.3. `Sketch_13.1_LVGL.ino.bin` is 1,658,528 bytes, SHA-256 `77de0ab9bf98b9947c1350a908041adcb371c73705b2e7257ea96a2f7460d84f`.
 
-- [Arduino source](./Sketch_13.1_LVGL.ino) and identical [v1.41 text snapshot](./CoolingAlarm_Freenove_v1_41.txt).
-- **OTA is still v1.39.** [firmware.json](./firmware.json) stays on the published v1.39 binary until a `freenove-v1.41` release with the compiled `Sketch_13.1_LVGL.ino.bin` (SHA-256 `46c351122bfaf61f623008e31136295dc355055b4d05a2627019472dfcb01e9d`) is published.
-
-## v1.40 — Solid red Alarm Due border diagnostic (source only)
-
-This **test build** isolates whether fast LVGL border redraws contribute to the visible screen wave and slower-sounding chirps on the Freenove FNK0114S.
-
-- On ALARM DUE, draw the same-thickness **solid red border** below the status header, continuously visible until the alarm is acknowledged.
-- **Do not update any LVGL border properties per chirp**. The screen, recipe, and DONE action remain as before.
-- **Do not change** the Google Sheets configurable chirp/gap/rest durations, the non-blocking five-chirp loop, external/onboard LED synchronization, button/confirmation sounds, alarm timing, storage, or OTA behavior.
-- This deliberately leaves existing `delay(8)` and LVGL handler behaviour unchanged, so it tests only the effect of removing border flashing.
 - [Arduino source](./Sketch_13.1_LVGL.ino) and identical [v1.40 text snapshot](./CoolingAlarm_Freenove_v1_40.txt).
-- **OTA is still v1.39.** The [firmware.json](./firmware.json) stays on the published v1.39 binary until v1.40 is compiled, attached to a release, and published. Source changes alone do not update the hardware.
-
-**Hardware test:** keep Config at your chosen chirp/gap/rest settings; compare the actual sound and check whether the screen wave disappears. If chirps are still slow, test timing independently of LVGL as the next experiment.
+- **OTA is still v1.39** until [firmware.json](./firmware.json) is updated and a `freenove-v1.40` release with the binary is published.
 
 ## v1.39 — Google Sheets configurable Alarm Due buzzer cadence (source ready)
 

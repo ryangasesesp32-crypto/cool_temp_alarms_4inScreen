@@ -1,7 +1,5 @@
-// Freenove v1.41: code-review fixes (see README). First build compiled with arduino-cli
-// (ESP32 core 3.3.12, LVGL 8.4.0, Freenove TFT_eSPI setup); not yet validated on hardware.
-// Retains the v1.40 solid red Alarm Due border; buzzer and LEDs retain Sheets-configured cadence.
-// LVGL border is drawn once on entry, not on individual chirps. No timing changes made.
+// Freenove v1.40: Alarm Due border no longer repaints the whole screen (fixes the visible
+// "wave" and the stretched chirps). Border is four thin bars redrawn immediately per chirp.
 // FREENOVE v1.32 — Phase 1: inactive Adafruit GFX/4-bit drawing code removed.
 // Original native LVGL, touch hitbox routing, Google Sheets, OTA, alarms,
 // LittleFS, NVS, time calculations and startup console are unchanged.
@@ -9439,9 +9437,7 @@ static const lv_font_t cool_mono_bold_12 = {
   .underline_thickness=1,
   .dsc=&cool_mono_bold_12_dsc,
   .fallback=&cool_mono_regular_18,
-#if LV_USE_USER_DATA
   .user_data=NULL
-#endif
 };
 
 // CHANGE #2: mirror the EXISTING Serial Monitor output to the startup LCD.
@@ -9486,8 +9482,8 @@ static StartupSerialMirror startupSerial(Serial);
 // PUBLIC OTA-SAFE build. Wi-Fi credentials and Apps Script token remain in
 // device Preferences (NVS), provisioned by the earlier v1.14 USB build.
 // Do not embed or publish private credentials in this source or binary.
-static const char* FIRMWARE_VERSION = "v1.41"; // Freenove-only OTA version; original alarm logic remains v1.31
-static const char* FREENOVE_BUILD_ID = "LVGL-F4-ReviewFixes-v1.41";
+static const char* FIRMWARE_VERSION = "v1.40"; // Freenove-only OTA version; original alarm logic remains v1.31
+static const char* FREENOVE_BUILD_ID = "LVGL-F4-DueBorderBars-v1.40";
 static const char* GITHUB_OTA_MANIFEST_URL = "https://raw.githubusercontent.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/main/firmware.json";
 // SAFETY: do not point this board at the ELEGOO production manifest.
 // The Freenove manifest may point to a staged draft release; OTA download will
@@ -9729,6 +9725,7 @@ static void nativeRender();
 static void nativeStartupMessage(const String& a,const String& b,const String& c);
 static void nativeProgress(int percent);
 static void nativeRefreshHeader();
+static void nativeUpdateDueBorder(bool active);
 static void selectCookPrepare();
 static String cookFirstName(int index);
 static void uiLargeButton(Rect r, const String& text, uint16_t bg, uint16_t border=0,
@@ -10323,7 +10320,7 @@ void openChooseRecipe(bool editing) {
   recipeForEdit=editing;
   chosenVenue=-1;chosenType=-1;chosenRecipe=-1;
   if(editing) {
-    for(int i=0;i<RECIPE_COUNT;i++)if(strncmp(draft.recipe,recipes[i].name,sizeof(draft.recipe)-1)==0) { // Alarm.recipe is truncated to 31 chars
+    for(int i=0;i<RECIPE_COUNT;i++)if(strcmp(draft.recipe,recipes[i].name)==0) {
       chosenRecipe=i;chosenVenue=recipes[i].venue;chosenType=recipes[i].type;break;
     }
   } else if(selectedRecipe>=0 && selectedRecipe<RECIPE_COUNT) {
@@ -10462,9 +10459,10 @@ void acknowledgeConfirmation() {
 void setAlert(bool on) {
   if(alertOn==on) return;
   alertOn=on;
-  // v1.40 diagnostic: keep all LVGL work out of alarm ON/OFF transitions.
-  // The static solid-red border is created once when entering ALARM_DUE.
-  outputs(on);                    // LEDs and buzzer remain synchronized
+  outputs(on);                    // v1.40: buzzer/LED switch first, exactly on time
+  if(screen==ALARM_DUE) {
+    nativeUpdateDueBorder(on);    // then the small border bars are repainted
+  }
 
 }
 
@@ -10623,17 +10621,14 @@ void yesConfirmation() {
   } else if(action==CA_CLEAR_ALL_ALARMS) {
     if(clearAllSavedAlarms())goHome();
     else {
-      // v1.41: the startup log screen is no longer active here, so
-      // startupMessage() would show nothing. Stay on the confirmation
-      // screen (alarms are still listed) and report on Serial.
       goBack();
-      Serial.println("CLEAR FAILED: storage error; saved alarms were not cleared");
+      startupMessage("CLEAR FAILED","Storage error","Do not power off");
     }
   } else if(action==CA_START_CALIBRATION) {
     startCalibration(true);
   } else if(action==CA_CREATE) {
-    if(selectedCook<0 || selectedRecipe<0 || !allowNewCoolingPair() || !timeSynced) {
-      Serial.println("CREATE blocked: cook, recipe and verified clock required");
+    if(selectedCook<0 || selectedRecipe<0 || !allowNewCoolingPair()) {
+      Serial.println("CREATE blocked: cook and recipe required");
       goBack();
       return;
     }
@@ -10680,26 +10675,11 @@ void yesConfirmation() {
 // The same NVS snapshot format and existing addPair() logic are retained.
 // On a failed NVS write, undo just this new pair in RAM and show an error.
 static bool createSaveError=false;
-static const char *createErrorText="SAVE FAILED - RETRY";
 static bool createPairImmediately() {
-  createErrorText="SAVE FAILED - RETRY";
-  if(!timeSynced) {
-    // v1.41: an alarm created without a verified clock gets dueEpoch=0 and
-    // would never fire. Refuse it visibly instead of saving a silent alarm.
-    createErrorText="CLOCK NOT VERIFIED";
-    Serial.println("CREATE blocked: clock not verified; alarm could never become due");
-    return false;
-  }
-  if(alarmCount>MAX_ALARMS-2) {
-    createErrorText="ALARM LIST FULL";
-    Serial.println("CREATE blocked: alarm list is full");
-    return false;
-  }
   if(selectedCook<0 || selectedCook>=COOK_COUNT ||
      selectedRecipe<0 || selectedRecipe>=RECIPE_COUNT ||
-     !allowNewCoolingPair() || !createTimesValid()) {
-    createErrorText="CHECK SELECTIONS";
-    Serial.println("CREATE blocked: invalid cook, recipe or hours");
+     !allowNewCoolingPair() || !createTimesValid() || alarmCount>MAX_ALARMS-2) {
+    Serial.println("CREATE blocked: invalid cook, recipe, hours, or full alarm list");
     return false;
   }
   const int previousCount=alarmCount;
@@ -11626,9 +11606,7 @@ bool parseSheetDataset(const String& payload,bool apply) {
   sheetValidationError="";
   if(payload.length()==0 || payload.length()>30000)return sheetValidationReject("EMPTY_OR_OVERSIZE_RESPONSE");
   DynamicJsonDocument doc(50000);
-  const DeserializationError jsonError=deserializeJson(doc,payload);
-  if(jsonError==DeserializationError::NoMemory)return sheetValidationReject("OUT_OF_MEMORY");
-  if(jsonError)return sheetValidationReject("INVALID_JSON");
+  if(deserializeJson(doc,payload))return sheetValidationReject("INVALID_JSON");
   // Accept older v1.12 local caches while new endpoint uses Break Log success=true.
   if(!(doc["success"] | false) && !(doc["ok"] | false))return sheetValidationReject("APP_RESPONSE_NOT_SUCCESS");
   JsonObjectConst conf=doc["config"].as<JsonObjectConst>();
@@ -12968,6 +12946,24 @@ static void homeRefreshClockAndDate() {
 static void nativeRefreshHeader(){
   homeRefreshClockAndDate(); // same fixed date/time/version header on all eligible screens
 }
+// v1.40: the border is four thin bar objects inside a transparent holder.
+// Changing the border width of one full-size object (v1.39) invalidated the
+// whole area below the header, so every chirp repainted ~136,000 pixels in
+// 12-line strips: a visible top-to-bottom "wave" that also blocked loop()
+// long enough to stretch the chirps. Showing/hiding the bars invalidates
+// only the bars (~18,000 pixels), and lv_refr_now() paints them at once so
+// the border stays in step with the buzzer instead of waiting for the next
+// 30 ms LVGL refresh period.
+static void nativeUpdateDueBorder(bool active) {
+  if(!nativeDueEdge)return;
+  const uint32_t bars=lv_obj_get_child_cnt(nativeDueEdge);
+  for(uint32_t i=0;i<bars;i++) {
+    lv_obj_t *bar=lv_obj_get_child(nativeDueEdge,(int32_t)i);
+    if(active)lv_obj_clear_flag(bar,LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(bar,LV_OBJ_FLAG_HIDDEN);
+  }
+  if(lvReady && !lvInsideHandler)lv_refr_now(nullptr);
+}
 // Startup status screens are replaced by a persistent scrolling log.
 static void nativeStartupMessage(const String&,const String&,const String&) {
   bootLogShow(true);
@@ -13188,7 +13184,7 @@ static void nativeRender(){
       uiLargeButton(CREATE_RECIPE,selectedRecipe>=0?String(recipes[selectedRecipe].name):"RECIPE",UI_DARK_BLUE,TEAL,true,2);
       uiLargeButton(CREATE_C1,String("c1 ")+homeAlarmTime(createC1Min),UI_PURPLE,TEAL,true,1);
       uiLargeButton(CREATE_C2,String("c2 ")+homeAlarmTime(createC2Min),UI_PURPLE,TEAL,true,1);
-      if(createSaveError)ntext(createErrorText,{8,176,304,17},RED,true);
+      if(createSaveError)ntext("SAVE FAILED - RETRY",{8,176,304,17},RED,true);
       else if(!createTimesValid())ntext("CHECK ALARM ORDER",{8,176,304,17},YELLOW,true);
       else if(!allowNewCoolingPair())ntext("PAST 10:15 PM",{8,176,304,17},YELLOW,true);
       uiLargeButton(CREATE_CANCEL,"CANCEL",DARK_RED,RED,true,1);
@@ -13259,13 +13255,32 @@ static void nativeRender(){
       lv_obj_set_pos(nativeDueEdge,0,ny(28));
       lv_obj_set_size(nativeDueEdge,PANEL_W,PANEL_H-ny(28));
       lv_obj_set_style_bg_opa(nativeDueEdge,LV_OPA_TRANSP,0);
-      lv_obj_set_style_border_color(nativeDueEdge,nativeColor(RED),0);
-      // Fixed red 8-unit border for this diagnostic build: no per-chirp redraw.
-      lv_obj_set_style_border_width(nativeDueEdge,nx(8),0);
+      lv_obj_set_style_border_width(nativeDueEdge,0,0);
       lv_obj_set_style_radius(nativeDueEdge,0,0);
       lv_obj_set_style_pad_all(nativeDueEdge,0,0);
       lv_obj_clear_flag(nativeDueEdge,LV_OBJ_FLAG_CLICKABLE);
       lv_obj_clear_flag(nativeDueEdge,LV_OBJ_FLAG_SCROLLABLE);
+      {
+        // Same 8-unit red border as v1.39, built from four bars:
+        // top, bottom, left, right (side bars fit between top and bottom).
+        const lv_coord_t t=nx(8),w=PANEL_W,h=PANEL_H-ny(28);
+        const lv_area_t bars[4]={{0,0,w,t},{0,(lv_coord_t)(h-t),w,t},
+                                 {0,t,t,(lv_coord_t)(h-2*t)},
+                                 {(lv_coord_t)(w-t),t,t,(lv_coord_t)(h-2*t)}}; // x,y,width,height
+        for(int i=0;i<4;i++) {
+          lv_obj_t *bar=lv_obj_create(nativeDueEdge);
+          lv_obj_set_pos(bar,bars[i].x1,bars[i].y1);
+          lv_obj_set_size(bar,bars[i].x2,bars[i].y2);
+          lv_obj_set_style_bg_color(bar,nativeColor(RED),0);
+          lv_obj_set_style_bg_opa(bar,LV_OPA_COVER,0);
+          lv_obj_set_style_border_width(bar,0,0);
+          lv_obj_set_style_radius(bar,0,0);
+          lv_obj_set_style_pad_all(bar,0,0);
+          lv_obj_clear_flag(bar,LV_OBJ_FLAG_CLICKABLE);
+          lv_obj_clear_flag(bar,LV_OBJ_FLAG_SCROLLABLE);
+          if(!alertOn)lv_obj_add_flag(bar,LV_OBJ_FLAG_HIDDEN);
+        }
+      }
       break;
     }
     case COOLING_INFO: {
@@ -13386,7 +13401,7 @@ void setup() {
   if(!bootLogInitBuffers())
     Serial.println("[STARTUP LOG] Not enough heap for display mirror; Serial Monitor remains operational");
   delay(150);
-  Serial.printf("Cooling Alarm %s (%s) - Freenove LVGL\n",FIRMWARE_VERSION,FREENOVE_BUILD_ID);
+  Serial.println("Cooling Alarm v1.31 - Freenove LVGL Alpha 1.8 FS + boot diagnostics");
   Serial.printf("[BOOT-RESET] esp_reset_reason=%d (1=power-on, 3=software, 4=panic, 6=task WDT, 9=brownout)\n",(int)esp_reset_reason());
   diagBootStage("SETUP START");
   bootMs=millis();
@@ -13523,16 +13538,6 @@ void setup() {
   bootLogScreenStop();
   serviceStoreSchedule();
   diagBootStage("AFTER FIRST STORE SCHEDULE CHECK");
-  if(storeClosedMode && !timeSynced) {
-    // v1.41: without a verified clock the store schedule can never run, so
-    // a saved closed state would leave the device dark and unusable until
-    // a later boot with Wi-Fi. Open the UI for this session only; the saved
-    // closed_mode flag is kept so the next verified boot follows the schedule.
-    storeClosedMode=false;
-    stopClosedHeartbeat();
-    digitalWrite(FREENOVE_BACKLIGHT_PIN,HIGH);
-    Serial.println("Closed state ignored for this boot: clock not verified; LCD ON");
-  }
   if(storeClosedMode) {
     // In closed mode, don't render or allow UI interaction.
     enterClosedDisplayMode();
@@ -13568,13 +13573,7 @@ void loop() {
   if(ENABLE_SELECT_BUTTON) {
     static bool wasPressed=false,handledHold=false;
     static uint32_t pressedAt=0;
-    // v1.41: 30 ms debounce so contact bounce cannot act as a second press.
-    static bool rawPrevious=false;
-    static uint32_t rawChangedAt=0;
-    const bool rawPressed=digitalRead(SELECT_PIN)==LOW;
-    if(rawPressed!=rawPrevious){rawPrevious=rawPressed;rawChangedAt=millis();}
-    bool pressed=wasPressed;
-    if((uint32_t)(millis()-rawChangedAt)>=30)pressed=rawPressed;
+    bool pressed=digitalRead(SELECT_PIN)==LOW;
     if(pressed && !wasPressed) {
       pressedAt=millis();handledHold=false;lastActivity=millis();
       if(screen==ALARM_DUE){ackDue();acknowledgeButton();handledHold=true;}
@@ -13686,5 +13685,7 @@ void loop() {
     // without a full-screen repaint, avoiding any periodic flashing.
   }
   pumpLVGL();
-  delay(8);
+  // v1.40: 1 ms loop while an alarm is sounding so 10-60 ms chirps are not
+  // rounded up by the 8 ms idle delay; every other screen keeps 8 ms.
+  delay(screen==ALARM_DUE?1:8);
 }
