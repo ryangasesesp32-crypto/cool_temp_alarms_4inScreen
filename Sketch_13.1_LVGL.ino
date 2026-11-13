@@ -9485,8 +9485,8 @@ static StartupSerialMirror startupSerial(Serial);
 // PUBLIC OTA-SAFE build. Wi-Fi credentials and Apps Script token remain in
 // device Preferences (NVS), provisioned by the earlier v1.14 USB build.
 // Do not embed or publish private credentials in this source or binary.
-static const char* FIRMWARE_VERSION = "v1.45"; // Freenove-only OTA version; original alarm logic remains v1.31
-static const char* FREENOVE_BUILD_ID = "LVGL-F4-LowRAM-TLSdiag-v1.45";
+static const char* FIRMWARE_VERSION = "v1.46"; // Freenove-only OTA version; original alarm logic remains v1.31
+static const char* FREENOVE_BUILD_ID = "LVGL-F4-Config-MadeList-v1.46";
 static const char* GITHUB_OTA_MANIFEST_URL = "https://raw.githubusercontent.com/ryangasesesp32-crypto/cool_temp_alarms_4inScreen/main/firmware.json";
 // SAFETY: do not point this board at the ELEGOO production manifest.
 // The Freenove manifest may point to a staged draft release; OTA download will
@@ -9669,7 +9669,8 @@ enum class AlarmStatus : uint8_t { Pending, Done, Cancelled };
 enum Screen : uint8_t {
   HOME, VIEW_ALARMS, ALARM_DETAILS, VIEW_ROSTER, VIEW_RECIPES, CHOOSE_RECIPE, RECIPE_OPTIONS, CREATE_ALARM,
   EDIT_ALARM, EDIT_TIME, CONFIRMATION, ALARM_DUE,
-  SETTINGS, ADVANCED_SETTINGS, COOLING_INFO, COOKING_INFO, CALIBRATE_TARGETS, CALIBRATE_VERIFY, RECIPE_INFO
+  SETTINGS, ADVANCED_SETTINGS, COOLING_INFO, COOKING_INFO, CALIBRATE_TARGETS, CALIBRATE_VERIFY, RECIPE_INFO,
+  VIEW_CONFIG, VIEW_MADE_RECIPES
 };
 enum ConfirmAction : uint8_t {
   CA_NONE, CA_CREATE, CA_SAVE_EDIT,
@@ -9711,6 +9712,10 @@ void shutdownStartupRadios();
 void stopClosedHeartbeat(); // Called when a saved closed state switches to Test.
 bool loadLocalSheetData();
 bool checkAndRefreshSheetData();
+static bool refreshMadeListAtStartup();
+static int madeListCountForToday();
+static bool madeListVisibleAt(int index,String& expiry,String& item,String& cook);
+static int configScreenRowCount();
 void startupMessage(const String& title, const String& detail, const String& footer);
 void startupProgress(int percent);
 void startupLogAdd(const String& line);
@@ -9791,7 +9796,7 @@ static const Rect SETTINGS_ROSTER = {8, 52, 149, 40};
 static const Rect SETTINGS_RECIPES = {163, 52, 149, 40};
 static const Rect SETTINGS_COOLING = {8, 100, 149, 40};
 static const Rect SETTINGS_COOKING = {163, 100, 149, 40};
-static const Rect SETTINGS_BLANK_LEFT = {8, 148, 149, 40};
+static const Rect SETTINGS_MADE = {8, 148, 149, 40};
 static const Rect SETTINGS_BLANK_RIGHT = {163, 148, 149, 40};
 static const Rect SETTINGS_HOME = {8, 196, 149, 40};
 static const Rect SETTINGS_ADVANCED = {163, 196, 149, 40};
@@ -9799,7 +9804,7 @@ static const Rect SETTINGS_ADVANCED = {163, 196, 149, 40};
 static const Rect ADV_RESTART = {8, 52, 149, 40};
 static const Rect ADV_CLEAR = {163, 52, 149, 40};
 static const Rect ADV_CALIBRATE = {8, 100, 149, 40};
-static const Rect ADV_BLANK1 = {163, 100, 149, 40};
+static const Rect ADV_VIEW_CONFIG = {163, 100, 149, 40};
 static const Rect ADV_BLANK2 = {8, 148, 149, 40};
 static const Rect ADV_BLANK3 = {163, 148, 149, 40};
 static const Rect ADV_BACK = {8, 196, 149, 40};
@@ -9824,6 +9829,14 @@ static const Rect DETAIL_EDIT = {164, 185, 148, 50};
 static const Rect GUIDE_BACK = {8, 202, 92, 34};
 static const Rect GUIDE_PREV = {112, 202, 96, 34};
 static const Rect GUIDE_NEXT = {220, 202, 92, 34};
+// Both read-only lists use one row: PAGINATION | BACK | PREV | NEXT.
+static const Rect READ_NAV_PAGE = {8, 196, 70, 40};
+static const Rect READ_NAV_BACK = {86, 196, 70, 40};
+static const Rect READ_NAV_PREV = {164, 196, 70, 40};
+static const Rect READ_NAV_NEXT = {242, 196, 70, 40};
+static constexpr int READ_LIST_PER_PAGE = 4;
+static int viewConfigPage = 0;
+static int viewMadePage = 0;
 static Rect alarmCardAt(int slot) {
   return {8+(slot%2)*155,34+(slot/2)*49,149,44};
 }
@@ -10872,7 +10885,8 @@ static bool isAcceptedButtonTap(int x,int y) {
     case SETTINGS:
       return contains(SETTINGS_ROSTER,x,y) || contains(SETTINGS_RECIPES,x,y) ||
              contains(SETTINGS_COOLING,x,y) || contains(SETTINGS_COOKING,x,y) ||
-             contains(SETTINGS_HOME,x,y) || contains(SETTINGS_ADVANCED,x,y);
+             contains(SETTINGS_HOME,x,y) || contains(SETTINGS_ADVANCED,x,y) ||
+             contains(SETTINGS_MADE,x,y);
     case COOLING_INFO: return contains({8,202,304,34},x,y);
     case COOKING_INFO:
       return contains(GUIDE_BACK,x,y) ||
@@ -10880,8 +10894,22 @@ static bool isAcceptedButtonTap(int x,int y) {
              (contains(GUIDE_NEXT,x,y) && (cookingGuidePage+1)*COOKING_GUIDE_PER_PAGE<COOKING_GUIDE_ITEMS);
     case ADVANCED_SETTINGS:
       return contains(ADV_RESTART,x,y) || contains(ADV_CLEAR,x,y) ||
-             contains(ADV_CALIBRATE,x,y) ||
+             contains(ADV_CALIBRATE,x,y) || contains(ADV_VIEW_CONFIG,x,y) ||
              contains(ADV_BACK,x,y) || contains(ADV_HOME,x,y);
+    case VIEW_CONFIG: {
+      const int count=configScreenRowCount();
+      const int pages=max(1,(count+READ_LIST_PER_PAGE-1)/READ_LIST_PER_PAGE);
+      return contains(READ_NAV_BACK,x,y) ||
+             (contains(READ_NAV_PREV,x,y) && viewConfigPage>0) ||
+             (contains(READ_NAV_NEXT,x,y) && viewConfigPage+1<pages);
+    }
+    case VIEW_MADE_RECIPES: {
+      const int count=madeListCountForToday();
+      const int pages=max(1,(count+READ_LIST_PER_PAGE-1)/READ_LIST_PER_PAGE);
+      return contains(READ_NAV_BACK,x,y) ||
+             (contains(READ_NAV_PREV,x,y) && viewMadePage>0) ||
+             (contains(READ_NAV_NEXT,x,y) && viewMadePage+1<pages);
+    }
     case CALIBRATE_TARGETS: return false;
     case CALIBRATE_VERIFY:
       return contains(VERIFY_RETRY,x,y) ||
@@ -11009,6 +11037,8 @@ void onTap(int x,int y) {
         pushScreen(VIEW_ROSTER);
       } else if(contains(SETTINGS_RECIPES,x,y)) {
         viewRecipePage=0;viewRecipeSelected=-1;pushScreen(VIEW_RECIPES);
+      } else if(contains(SETTINGS_MADE,x,y)) {
+        viewMadePage=0;pushScreen(VIEW_MADE_RECIPES);
       } else if(contains(SETTINGS_COOLING,x,y)) {
         pushScreen(COOLING_INFO);
       } else if(contains(SETTINGS_COOKING,x,y)) {
@@ -11035,8 +11065,23 @@ void onTap(int x,int y) {
       if(contains(ADV_RESTART,x,y))confirm(CA_RESTART_DEVICE);
       else if(contains(ADV_CLEAR,x,y))confirm(CA_CLEAR_ALL_ALARMS);
       else if(contains(ADV_CALIBRATE,x,y))confirm(CA_START_CALIBRATION);
+      else if(contains(ADV_VIEW_CONFIG,x,y)) {viewConfigPage=0;pushScreen(VIEW_CONFIG);}
       else if(contains(ADV_BACK,x,y))goBack();
       else if(contains(ADV_HOME,x,y))goHome();
+      break;
+    }
+    case VIEW_CONFIG: {
+      const int pages=max(1,(configScreenRowCount()+READ_LIST_PER_PAGE-1)/READ_LIST_PER_PAGE);
+      if(contains(READ_NAV_BACK,x,y))goBack();
+      else if(contains(READ_NAV_PREV,x,y) && viewConfigPage>0){--viewConfigPage;render();}
+      else if(contains(READ_NAV_NEXT,x,y) && viewConfigPage+1<pages){++viewConfigPage;render();}
+      break;
+    }
+    case VIEW_MADE_RECIPES: {
+      const int pages=max(1,(madeListCountForToday()+READ_LIST_PER_PAGE-1)/READ_LIST_PER_PAGE);
+      if(contains(READ_NAV_BACK,x,y))goBack();
+      else if(contains(READ_NAV_PREV,x,y) && viewMadePage>0){--viewMadePage;render();}
+      else if(contains(READ_NAV_NEXT,x,y) && viewMadePage+1<pages){++viewMadePage;render();}
       break;
     }
     case CALIBRATE_TARGETS: break; // raw touches handled before onTap()
@@ -12096,6 +12141,169 @@ bool refreshConfigAtStartup() {
   }
   startupLogAdd("Config refresh: SUCCESS; latest server settings applied");
   return true;
+}
+
+
+// ---------------- READ-ONLY CONFIG / MADE RECIPE SNAPSHOTS ----------------
+// Separate from the working RecipesMade POST queue and ACK. The new list is
+// downloaded once at startup and read from LittleFS by the UI (no network
+// connection during navigation). A failed download keeps the last good cache.
+static const char* MADE_LIST_FILE="/made_list_v1.tsv";
+static const char* MADE_LIST_TEMP="/made_list_v1.tmp";
+static const char* MADE_LIST_BACKUP="/made_list_v1.bak";
+
+static String madeTodayISO() {
+  if(!timeSynced)return "";
+  time_t now=time(nullptr);
+  struct tm local={};
+  if(!localtime_r(&now,&local))return "";
+  char iso[11];
+  if(!strftime(iso,sizeof(iso),"%Y-%m-%d",&local))return "";
+  return String(iso);
+}
+static bool validMadeISO(const String &date) {
+  if(date.length()!=10 || date[4]!='-' || date[7]!='-')return false;
+  for(int i=0;i<10;i++)if(i!=4 && i!=7 &&
+      (date[i]<'0' || date[i]>'9'))return false;
+  const int m=date.substring(5,7).toInt(),d=date.substring(8,10).toInt();
+  return m>=1 && m<=12 && d>=1 && d<=31;
+}
+static bool madeListParseLine(const String& line,String& expiry,String& item,String& cook) {
+  const int a=line.indexOf('\t');
+  if(a!=10)return false;
+  const int b=line.indexOf('\t',a+1);
+  if(b<0 || b==a+1 || line.indexOf('\t',b+1)>=0)return false;
+  expiry=line.substring(0,a);
+  item=line.substring(a+1,b);
+  cook=line.substring(b+1);
+  return validMadeISO(expiry) && !item.isEmpty() &&
+         item.length()<=150 && cook.length()<=70 &&
+         line.indexOf('\r')<0;
+}
+// Validate the entire new snapshot BEFORE replacing the cached one.
+static bool madeListValidPayload(const String& payload) {
+  if(payload.length()<8 || payload.length()>28000 ||
+     !payload.startsWith("MADE1\t"))return false;
+  const int firstEnd=payload.indexOf('\n');
+  if(firstEnd<0)return false;
+  const String n=payload.substring(6,firstEnd);
+  if(n.isEmpty() || n.length()>5)return false;
+  for(size_t i=0;i<n.length();i++)if(n[i]<'0'||n[i]>'9')return false;
+  const int expected=n.toInt();
+  int seen=0,pos=firstEnd+1;
+  String previous="";
+  while(pos<(int)payload.length()) {
+    int end=payload.indexOf('\n',pos);
+    if(end<0)return false;
+    String line=payload.substring(pos,end);
+    String expiry,item,cook;
+    if(!madeListParseLine(line,expiry,item,cook) ||
+       (!previous.isEmpty() && expiry<previous))return false;
+    previous=expiry;seen++;pos=end+1;
+    if(seen>10000)return false;
+  }
+  return seen==expected;
+}
+static bool madeListSaveAtomic(const String& payload) {
+  if(!fsReady || !madeListValidPayload(payload))return false;
+  LittleFS.remove(MADE_LIST_TEMP);
+  fs::File f=LittleFS.open(MADE_LIST_TEMP,"w");
+  if(!f)return false;
+  const size_t n=f.print(payload);f.close();
+  if(n!=payload.length()){LittleFS.remove(MADE_LIST_TEMP);return false;}
+  LittleFS.remove(MADE_LIST_BACKUP);
+  const bool hadOld=LittleFS.exists(MADE_LIST_FILE);
+  if(hadOld && !LittleFS.rename(MADE_LIST_FILE,MADE_LIST_BACKUP)){
+    LittleFS.remove(MADE_LIST_TEMP);return false;
+  }
+  if(!LittleFS.rename(MADE_LIST_TEMP,MADE_LIST_FILE)){
+    if(hadOld)LittleFS.rename(MADE_LIST_BACKUP,MADE_LIST_FILE);
+    LittleFS.remove(MADE_LIST_TEMP);return false;
+  }
+  LittleFS.remove(MADE_LIST_BACKUP);
+  return true;
+}
+static bool refreshMadeListAtStartup() {
+  startupMessage("MADE RECIPES","Fetching at startup","Active and unexpired only");
+  String payload;
+  if(!sheetGet("madeList",payload)) {
+    startupLogAdd("Made list GET failed; saved cache preserved");
+    return false;
+  }
+  if(!madeListValidPayload(payload)) {
+    sheetReportAppError("madeList",payload);
+    startupLogAdd("Made list invalid; saved cache preserved");
+    return false;
+  }
+  if(!madeListSaveAtomic(payload)) {
+    startupLogAdd("Made list write failed; saved cache preserved");
+    return false;
+  }
+  const int e=payload.indexOf('\n');
+  startupLogAdd("Made list refreshed; rows="+payload.substring(6,e));
+  return true;
+}
+static bool madeListOpen(fs::File &f) {
+  if(!fsReady)return false;
+  if(!LittleFS.exists(MADE_LIST_FILE) && LittleFS.exists(MADE_LIST_BACKUP))
+    LittleFS.rename(MADE_LIST_BACKUP,MADE_LIST_FILE);
+  f=LittleFS.open(MADE_LIST_FILE,"r");
+  if(!f)return false;
+  String h=f.readStringUntil('\n');
+  if(!h.startsWith("MADE1\t")){f.close();return false;}
+  return true;
+}
+static int madeListCountForToday() {
+  const String today=madeTodayISO();
+  if(today.isEmpty())return 0; // Never display expired items with an unverified clock.
+  fs::File f;
+  if(!madeListOpen(f))return 0;
+  int count=0;
+  while(f.available()) {
+    String line=f.readStringUntil('\n');
+    String expiry,item,cook;
+    if(!madeListParseLine(line,expiry,item,cook))continue;
+    if(expiry>=today)++count;
+  }
+  f.close();
+  return count;
+}
+static bool madeListVisibleAt(int index,String& expiry,String& item,String& cook) {
+  if(index<0)return false;
+  const String today=madeTodayISO();
+  if(today.isEmpty())return false;
+  fs::File f;
+  if(!madeListOpen(f))return false;
+  int i=0;
+  while(f.available()) {
+    const String line=f.readStringUntil('\n');
+    String exp,name,by;
+    if(!madeListParseLine(line,exp,name,by) || exp<today)continue;
+    if(i++==index){expiry=exp;item=name;cook=by;f.close();return true;}
+  }
+  f.close();return false;
+}
+static int configScreenRowCount() {
+  const String saved=prefs.getString("cfg_json","");
+  if(saved.isEmpty())return 0;
+  DynamicJsonDocument doc(7000);
+  if(deserializeJson(doc,saved))return 0;
+  JsonArrayConst rows=doc["settingsRows"].as<JsonArrayConst>();
+  if(!rows.isNull())return (int)rows.size();
+  JsonObjectConst all=doc["settings"].as<JsonObjectConst>();
+  return all.isNull()?0:(int)all.size();
+}
+static bool configScreenMasked(String label) {
+  label.toLowerCase();
+  return label.indexOf("password")>=0 || label.indexOf("token")>=0 ||
+         label.indexOf("secret")>=0 || label.indexOf("apikey")>=0 ||
+         label.indexOf("api key")>=0 || label.indexOf("credential")>=0;
+}
+static void drawReadNavigation(int page,int pages) {
+  nbutton(READ_NAV_PAGE,String(page+1)+"/"+String(pages),GREY,WHITE,false);
+  nbutton(READ_NAV_BACK,"BACK",BLUE,WHITE);
+  nbutton(READ_NAV_PREV,"PREV",BLUE,WHITE,page>0);
+  nbutton(READ_NAV_NEXT,"NEXT",BLUE,WHITE,page+1<pages);
 }
 
 bool checkAndRefreshSheetData() {
@@ -13547,7 +13755,8 @@ static void nativeRender(){
       nbutton(SETTINGS_RECIPES,"View Recipes",BLUE,WHITE);
       nbutton(SETTINGS_COOLING,"COOLING INFO",SETTINGS_TEAL,WHITE);
       nbutton(SETTINGS_COOKING,"COOKING INFO",UI_PURPLE,WHITE);
-      ntile(SETTINGS_BLANK_LEFT,PANEL);ntile(SETTINGS_BLANK_RIGHT,PANEL);
+      nbutton(SETTINGS_MADE,"VIEW MADE RECIPES",YELLOW,BLACK);
+      ntile(SETTINGS_BLANK_RIGHT,PANEL);
       nbutton(SETTINGS_HOME,"HOME",GREEN,WHITE);
       nbutton(SETTINGS_ADVANCED,"ADVANCED",SETTINGS_ORANGE,BLACK);
       break;
@@ -13559,9 +13768,77 @@ static void nativeRender(){
       nbutton(ADV_RESTART,"RESTART",YELLOW,BLACK);
       nbutton(ADV_CLEAR,"CLEAR ALL ALARMS",DARK_RED,WHITE);
       nbutton(ADV_CALIBRATE,"CALIBRATE SCREEN",SETTINGS_TEAL,WHITE);
-      ntile(ADV_BLANK1,PANEL);ntile(ADV_BLANK2,PANEL);ntile(ADV_BLANK3,PANEL);
+      nbutton(ADV_VIEW_CONFIG,"VIEW CONFIG",SETTINGS_ORANGE,BLACK);
+      ntile(ADV_BLANK2,PANEL);ntile(ADV_BLANK3,PANEL);
       nbutton(ADV_BACK,"BACK",BLUE,WHITE);
       nbutton(ADV_HOME,"HOME",GREEN,WHITE);
+      break;
+    }
+
+    case VIEW_CONFIG: {
+      ntitle("VIEW CONFIG");
+      const String saved=prefs.getString("cfg_json","");
+      DynamicJsonDocument doc(7000);
+      const bool valid=!saved.isEmpty() && !deserializeJson(doc,saved);
+      JsonArrayConst rows=doc["settingsRows"].as<JsonArrayConst>();
+      JsonObjectConst all=doc["settings"].as<JsonObjectConst>();
+      const int count=!valid?0:!rows.isNull()?(int)rows.size():
+                              !all.isNull()?(int)all.size():0;
+      const int pages=max(1,(count+READ_LIST_PER_PAGE-1)/READ_LIST_PER_PAGE);
+      viewConfigPage=constrain(viewConfigPage,0,pages-1);
+      for(int slot=0;slot<READ_LIST_PER_PAGE;slot++) {
+        int index=viewConfigPage*READ_LIST_PER_PAGE+slot;
+        if(index>=count)break;
+        String label,value;
+        if(!rows.isNull()){
+          JsonArrayConst row=rows[index].as<JsonArrayConst>();
+          if(row.isNull() || row.size()<2)continue;
+          label=String((const char*)(row[0]|""));
+          value=String((const char*)(row[1]|""));
+        } else {
+          int n=0;
+          for(JsonPairConst p:all)if(n++==index){
+            label=String(p.key().c_str());
+            value=String(p.value().as<const char*>());
+            break;
+          }
+        }
+        if(configScreenMasked(label))value="********";
+        const int y=54+slot*35;
+        ntile({8,y,304,34},PANEL);
+        ntext(label,{14,y+6,188,24},WHITE,false);
+        ntext(value,{206,y+6,100,24},TEAL,true);
+      }
+      if(count==0)ntext("NO CACHED CONFIG",{16,102,288,30},YELLOW,true);
+      drawReadNavigation(viewConfigPage,pages);
+      break;
+    }
+    case VIEW_MADE_RECIPES: {
+      ntitle("VIEW MADE RECIPES");
+      const int count=madeListCountForToday();
+      const int pages=max(1,(count+READ_LIST_PER_PAGE-1)/READ_LIST_PER_PAGE);
+      viewMadePage=constrain(viewMadePage,0,pages-1);
+      for(int slot=0;slot<READ_LIST_PER_PAGE;slot++) {
+        const int index=viewMadePage*READ_LIST_PER_PAGE+slot;
+        if(index>=count)break;
+        String expiry,item,cook;
+        if(!madeListVisibleAt(index,expiry,item,cook))continue;
+        const int y=54+slot*35;
+        ntile({8,y,304,34},PANEL);
+        ntext(item,{14,y+1,292,18},WHITE,false);
+        String subtitle="EXP "+expiry.substring(8,10)+"-"+expiry.substring(5,7)+"-"+
+                        expiry.substring(0,4);
+        if(!cook.isEmpty())subtitle+="  "+cook;
+        ntext(subtitle,{14,y+18,292,16},TEAL,false);
+      }
+      if(count==0){
+        if(!timeSynced)ntext("CLOCK NOT VERIFIED",{14,90,292,25},YELLOW,true);
+        else if(!fsReady || (!LittleFS.exists(MADE_LIST_FILE) &&
+                             !LittleFS.exists(MADE_LIST_BACKUP)))
+          ntext("NO CACHED MADE RECIPES",{12,92,296,29},YELLOW,true);
+        else ntext("NO ACTIVE UNEXPIRED RECIPES",{10,92,300,29},TEAL,true);
+      }
+      drawReadNavigation(viewMadePage,pages);
       break;
     }
     case VIEW_ALARMS: {
@@ -14030,6 +14307,9 @@ void setup() {
     diagBootStage("BEFORE GOOGLE DATA FLAG");
     checkAndRefreshSheetData();
     diagBootStage("AFTER GOOGLE DATA FLAG");
+    diagBootStage("BEFORE MADE LIST REFRESH");
+    refreshMadeListAtStartup(); // Every connected startup, regardless of UpdateDataNow.
+    diagBootStage("AFTER MADE LIST REFRESH");
     logFilesystemStatus("AFTER GOOGLE DATA FLAG");
     // When a newer Config was loaded, roster parsing leaves it untouched.
   }
